@@ -395,6 +395,26 @@ function calibration(W) {
   fill("calibration", out.length > 1 ? out : empty("Reliability curves not computed.", RUN.evaluate));
 }
 
+const ALERT = [["alarms_per_hour", "Alarms per hour", 1], ["false_per_true_alarm", "False alarms per true alarm", 1],
+  ["median_lead_min", "Median lead, min", 1], ["pct_warned_5min", "Events warned 5 min or more ahead, %", 0, true],
+  ["event_recall", "Events with an alert in the 10 min before onset, %", 0, true]];
+
+function alertsSection() {
+  const H = HH(), a = metrics.alerts || {};
+  const out = [h("p", {}, `An alert fires when a model's ${H}-minute risk crosses its threshold, then stays quiet for 5 minutes unless the risk rises further. `,
+    a.chosen_on ? `Each threshold was chosen on the ${a.chosen_on === "val" ? "validation" : a.chosen_on} split so that every model alarms about ${fmt(a.alarms_per_hour_target, 1)} times per hour, which keeps the comparison fair. ` : null,
+    "Repeat alarms within 5 minutes count once.")];
+  for (const [ev, byH] of Object.entries(metrics.overall || {})) {
+    const byM = byH[H] || {};
+    out.push(h("div", { class: "scroll" }, h("table", { class: "metrics" }, h("caption", {}, cap(ev)),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), h("th", { scope: "col" }, "Threshold, %"), ALERT.map(([, l]) => h("th", { scope: "col" }, l)))),
+      h("tbody", {}, metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
+        h("th", { scope: "row" }, modelName(m)), h("td", {}, a.threshold?.[ev]?.[m] == null ? "n/a" : fmt(a.threshold[ev][m] * 100)),
+        ALERT.map(([k, , d, p]) => cell(byM[m][k], d, p))))))));
+  }
+  fill("alerts", out);
+}
+
 let cohort, metrics, index;
 
 function renderAll() {
@@ -406,6 +426,7 @@ function renderAll() {
     headline(W);
     metricsSection();
     calibration(W);
+    alertsSection();
   }
   if (!index?.length) fill("cases", empty("No surgeries exported yet.", RUN.export));
   else { if (!picker) caseShell(); drawCase(); }

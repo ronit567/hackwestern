@@ -62,7 +62,7 @@ section:last-child { border-bottom: 0; padding-bottom: 4rem; }
 table { border-collapse: collapse; font-size: .9375rem; }
 th, td { text-align: right; padding: .35rem .75rem; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th:first-child, td:first-child { text-align: left; padding-left: 0; }
-thead th { font-weight: 600; color: var(--muted); border-bottom-color: var(--rule); vertical-align: bottom; }
+thead th { font-weight: 600; color: var(--muted); border-bottom-color: var(--rule); vertical-align: bottom; white-space: normal; max-width: 10rem; }
 tbody th { font-weight: 400; }
 .ci { color: var(--muted); font-size: .8125rem; margin-left: .35rem; }
 

@@ -105,13 +105,14 @@ SPO2_STEP = 5  # a fall between consecutive readings this big is 0.04% of readin
 SPO2_DROP = 3  # back within this of the pre-drop value ends an episode
 
 
-def map_artifact(m, sbp, dbp):
-    """Range and pulse-pressure rules, then a jump of > map_jump_max vs the cleaned MAP at the previous step
-    (the last valid sample, as forward-filled up to FILL steps), so a flush plateau stays flagged until it returns.
-    Once that reference has expired, the next valid sample must come with SBP and DBP: a flush longer than 30 s
-    sends MAP without them (median 110 mmHg, 40% outside 20-200, vs 5% when SBP/DBP are present)."""
-    out = (m < A["map_min"]) | (m > A["map_max"]) | (sbp - dbp < A["pulse_pressure_min"])
+def map_artifact(m, sbp, dbp, beat_pp):
+    """Range and pulse-pressure rules; MAP sent without SBP/DBP while no ART beat landed in the bin (flush or blood
+    draw: a flat or decaying line the < 40 mmHg/step jump rule can't see); then a jump of > map_jump_max vs the cleaned
+    MAP at the previous step (the last valid sample, as forward-filled up to FILL steps), so a flush plateau stays
+    flagged until it returns. Once that reference has expired, the next valid sample must come with SBP and DBP: a flush
+    longer than 30 s sends MAP without them (median 110 mmHg, 40% outside 20-200, vs 5% when SBP/DBP are present)."""
     pulsatile = np.isfinite(sbp) & np.isfinite(dbp)
+    out = (m < A["map_min"]) | (m > A["map_max"]) | (sbp - dbp < A["pulse_pressure_min"]) | np.isfinite(m) & ~pulsatile & np.isnan(beat_pp)
     last = -FILL - 2
     for i in np.flatnonzero(np.isfinite(m) & ~out):  # recursive on the last valid sample, so a loop
         if (abs(m[i] - m[last]) > A["map_jump_max"]) if i - last <= FILL + 1 else not pulsatile[i]:
@@ -154,7 +155,7 @@ def clean_case(raw):
     """Causal cleaning of a raw 2 s grid: artifact -> NaN, ffill <= FILL steps (a gap's first 30 s is filled,
     the rest stays NaN: whether a gap will last > 30 s is unknown at the time), masks, artifact flags for labels."""
     m, s = raw["map"].to_numpy(), raw.spo2.to_numpy()
-    art_map = map_artifact(m, raw.sbp.to_numpy(), raw.dbp.to_numpy())
+    art_map = map_artifact(m, raw.sbp.to_numpy(), raw.dbp.to_numpy(), raw.beat_pp.to_numpy())
     art_spo2 = spo2_artifact(raw.spo2, raw.pleth_amp, raw.pleth_cv)
     x = raw.drop(columns=["t_sec", "nibp_map"])
     x.loc[art_map, ["map", "sbp", "dbp"]] = np.nan

@@ -60,6 +60,9 @@ def raw_case():
     d.loc[d.index[k], "spo2"] = np.round(np.linspace(97, 82, k.stop - k.start))
     d.loc[d.index[k][::8], "pleth_amp"] = 300.0
     d.loc[d.index[steps(150, 158)], ["map", "sbp", "dbp"]] = np.nan  # 8 min without MAP
+    k = steps(95, 96.5)  # blood draw: MAP decays 80 -> 40 (< 40 per step), sent without SBP/DBP, no ART beats
+    d.loc[d.index[k], "map"] = 40 + 40 * np.exp(-np.arange(k.stop - k.start) / 8)
+    d.loc[d.index[k], ["sbp", "dbp"] + BEAT] = np.nan
     return d
 
 
@@ -81,6 +84,8 @@ def test_clean_case_rules():
     assert (g[BEAT][i : i + 6 + 6] == raw[BEAT].iloc[i - 1]).all().all()  # artifact beats replaced, 12 s window
     i = steps(75, 75).start
     assert g.art_map[i : i + 25].all() and not g.art_map[i + 25]  # plateau outlives the reference, still flagged
+    assert g.art_map[steps(95, 96.5)].all()  # blood-draw decay: no SBP/DBP and no beat
+    assert not g.art_map[steps(96.5, 99)].any()
     for a, b in [(130.2, 134), (140.5, 144), (165, 167.5), (170.5, 174)]:  # probe off, motion, weak after flat, rail
         assert g.art_spo2[steps(a, b)].all()
     assert not g.art_spo2[steps(100, 130)].any()  # includes the real hypoxemia at 110-113 min

@@ -75,3 +75,11 @@ def test_beat_sanity():
     assert abs(g.beat_pp.median() - 40) < 2
     assert abs(g.beat_hr.median() - 72) < 1
     assert g.beat_pp.notna().mean() > 0.95
+
+
+def test_dpdt_resolves_quantised_wave():
+    # real ART is stored in ~1 mmHg ADC counts; a one-sample slope would read 1000 here
+    ph = 2 * np.pi * 1.3 * t
+    x = 80 + 40 * (np.sin(ph) + 0.3 * np.sin(2 * ph + 1) + 0.1 * np.sin(3 * ph + 2))
+    true = (40 * 2 * np.pi * 1.3 * (np.cos(ph) + 0.6 * np.cos(2 * ph + 1) + 0.3 * np.cos(3 * ph + 2))).max()
+    assert abs(beats(np.round(x).astype(np.float32)).dpdt.median() / true - 1) < 0.1

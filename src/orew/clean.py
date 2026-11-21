@@ -14,6 +14,7 @@ PROM = 10.0  # mmHg; candidate peaks need this prominence (rejects noise and qua
 WLEN = int(1.5 * FS) + 1  # odd: scipy searches prominence bases in [p - WLEN//2, p + WLEN//2]
 # a beat peak is the highest candidate within +-REFR, which drops diastolic waves (~0.3 s after systole)
 REFR = int(0.35 * FS)  # shortcut: caps detectable HR at ~170 bpm, make adaptive if tachycardia matters
+K = 5  # dP/dt over 10 ms: ART is quantised at ~1 mmHg, so a 2 ms difference only resolves ~494 mmHg/s
 BEAT_WIN = "12s"  # trailing window for breath-to-breath PP swing and SBP variability
 PLETH_WIN = 30 // STEP  # trailing grid bins for pleth amplitude CV
 
@@ -59,7 +60,7 @@ def beats(x):
         rows.append((
             known[j + 1],  # feet[j] needs peak j+1
             x[pk] - dbp,
-            np.diff(x[f0 : pk + 1]).max() * FS,
+            (x[f0 + K : pk + 1] - x[f0 : pk + 1 - K]).max() * FS / K if pk - f0 >= K else np.nan,
             (seg[: dur // 3] - dbp).sum() / FS,  # shortcut: systole = first third of the beat, no notch detection
             60 * FS / dur,
             x[pk],

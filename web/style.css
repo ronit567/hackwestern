@@ -108,7 +108,10 @@ svg text.phase-label { fill: var(--ink); font-size: 11px; }
 .alerts { padding-left: 1.25rem; }
 .alerts li { margin-bottom: .5rem; max-width: 70ch; }
 
-.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.5rem 2rem; }
+.pair { display: grid; gap: 1.5rem 2rem; }
+/* app.js draws two columns once the content is 760px wide (viewport 792px) */
+@media (min-width: 792px) { .pair { grid-template-columns: 1fr 1fr; } }
+.pair svg { width: 100%; height: auto; }
 figure { margin: 0 0 1rem; }
 .verdict { font-size: 1.0625rem; }
 .legend { color: var(--muted); font-size: .875rem; }

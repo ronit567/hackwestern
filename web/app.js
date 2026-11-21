@@ -415,6 +415,20 @@ function alertsSection() {
   fill("alerts", out);
 }
 
+const ATTR = { age_band: "Age, years", sex: "Sex", asa: "ASA class", department: "Department", emergency: "Emergency or planned" };
+
+function subgroups(W) {
+  const H = HH(), fm = metrics.final_model, out = [
+    h("p", {}, `AUROC ${H} minutes ahead within each patient group. Small groups have wide intervals; read them before reading the dots.`), legend()];
+  const cw = W >= 760 ? (W - 32) / 2 : W;
+  for (const [ev, byH] of Object.entries(metrics.subgroups || {})) {
+    out.push(h("h3", {}, cap(ev)), h("div", { class: "pair" }, Object.entries(byH[H] || {}).map(([attr, groups]) =>
+      dumbbell(ATTR[attr] || attr, groups.map((g) => ({ label: g.label, sub: `${fmt(g.n_pos)} of ${fmt(g.n)} times before an onset`, a: g.models[fm]?.auroc, b: g.models.baseline1?.auroc })),
+        cw, [modelName(fm), MODEL.baseline1]))));
+  }
+  fill("subgroups", out.length > 2 ? out : empty("Subgroup results not computed.", RUN.evaluate));
+}
+
 let cohort, metrics, index;
 
 function renderAll() {
@@ -427,6 +441,7 @@ function renderAll() {
     metricsSection();
     calibration(W);
     alertsSection();
+    subgroups(W);
   }
   if (!index?.length) fill("cases", empty("No surgeries exported yet.", RUN.export));
   else { if (!picker) caseShell(); drawCase(); }

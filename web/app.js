@@ -66,7 +66,7 @@ function overview(c) {
     ["Department", counts(c.department)],
   ];
   if (c.events) for (const [ev, e] of Object.entries(c.events))
-    facts.push([`${cap(ev)} events`, `${fmt(e.n_events)} in ${fmt(e.n_cases)} surgeries`]);
+    facts.push([`${cap(ev)} events`, `${fmt(e.n_events)} in ${fmt(e.n_cases)} of ${fmt(c.n_labelled)} labelled surgeries`]);
   if (c.splits) facts.push(["Split (patients)", ["train", "val", "test"].map((k) => `${k} ${fmt(c.splits[k]?.n_subjects)}`).join(", ")]);
 
   const rows = c.signals.map((g) =>

@@ -206,7 +206,7 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `emergency` | `{n, of}` (`emop == 1`) | ″ |
 | `median_duration_min` | float, `caseend − casestart` | ″ |
 | `signals` | `[{name, pct_time, pct_cases}]`: % of 2 s grid rows with data (mean over cases) and % of cases with any data, for each parquet column | cached parquets |
-| `events` *(once labels.py has run)* | `{event: {n_events, n_cases}}` over labelled cases | `processed/events.parquet` |
+| `n_labelled`, `events` *(once labels.py has run)* | int (cached cases with a `processed/grid` file); `{event: {n_events, n_cases}}` over those cases | `processed/events.parquet` |
 | `splits` *(once labels.py has run)* | `{train|val|test: {n_subjects, n_cases}}` over the whole cohort | `processed/splits.json` |
 
 ### `reports/web/cases/index.json` + `cases/{caseid}.json`: `export.py`

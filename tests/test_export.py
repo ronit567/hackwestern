@@ -72,6 +72,7 @@ def test_label_fields(out):
             assert e["type"] in {"hypotension", "hypoxemia"} and e["onset_min"] <= e["end_min"]
     coh = load(out / "cohort.json")
     assert sum(s["n_cases"] for s in coh["splits"].values()) == coh["n_cohort"]
+    assert all(e["n_cases"] <= coh["n_labelled"] <= coh["n_cached"] for e in coh["events"].values())
 
 
 def test_page_script_parses():

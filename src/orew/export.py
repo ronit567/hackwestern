@@ -83,6 +83,7 @@ def export(max_cases=50, out=OUT):
     pt = pd.DataFrame(pct_time)  # signals x cases
     later = {}
     if ev is not None:
+        later["n_labelled"] = sum((PROCESSED / "grid" / f"{i:04d}.parquet").exists() for i in ids)
         later["events"] = {e: {"n_events": int(n), "n_cases": int(k)} for e, (n, k) in ev.groupby("event").caseid.agg(["size", "nunique"]).iterrows()}
     if split_of:
         s = cohort.assign(split=cohort.subjectid.map(split_of))  # the split covers the whole cohort, not only cached cases

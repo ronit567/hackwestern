@@ -1,13 +1,17 @@
 """Write reports/web/{cohort.json, cases/*.json} for the results page in web/. metrics.json is evaluate.py's job.
 
-Contract: PLAN.md, section "Results frontend".
+Contract: PLAN.md, section "Results frontend". Case files get fusion risk curves and alerts from evaluate.py's p10 alarm
+simulator (models/threshold.json): train from the cross-fitted OOF preds, val, test only once evaluate's lock exists.
 """
 import argparse
 import json
 
+import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 from orew import PROCESSED, RAW, REPORTS
+from orew.evaluate import EVENTS, HH, HS, LOCK, alarms  # the alert simulator evaluate reports with
 
 OUT = REPORTS / "web"
 STEP = 10  # s, case-explorer resolution
@@ -42,6 +46,66 @@ def labels():
             {s: k for k, v in json.loads(sp.read_text()).items() for s in v} if sp.exists() else None)
 
 
+def sig3(a):
+    """3 significant digits, NaN -> None (hypoxemia risks sit near 1 %, where 3 decimals would flatten them)."""
+    return [None if np.isnan(v) else float(f"{v:.3g}") for v in a]
+
+
+def risk_sources(processed=PROCESSED, lock=LOCK):
+    """{split: preds file} the page may show: train (cross-fitted OOF), val, and test only after evaluate's locked run."""
+    src = {"train": "preds_oof", "val": "preds_val", **({"test": "preds_test"} if lock.exists() else {})}
+    return {k: processed / f"{f}.parquet" for k, f in src.items() if (processed / f"{f}.parquet").exists()}
+
+
+def load_risk(ids, processed=PROCESSED, lock=LOCK):
+    """({caseid: preds rows sorted by t_sec}, {(caseid, t_sec): {event: drivers text}}, {event: p10 threshold}) for
+    these cases, or None before models.py has run."""
+    src, tf = risk_sources(processed, lock), processed / "models" / "threshold.json"
+    if not src or not tf.exists():
+        return None
+    thr = json.loads(tf.read_text())
+    assert all(thr[e]["chosen_on"] == "val" for e in EVENTS), "alert threshold must come from val (leakage #10)"
+    want = ["caseid", "t_sec", "split", *[f"{x}_{e}" for e in EVENTS for x in ("eligible", "lead_specialist")],
+            *[f"p_fusion_{e}_{h}" for e in EVENTS for h in HS]]
+    frames, drivers = [], {}
+    for k, p in src.items():
+        d = pd.read_parquet(p, columns=[c for c in want if c in pq.read_schema(p).names], filters=[("caseid", "in", list(ids))])
+        frames.append(d[d.split == k])  # a case is scored only from its own split's file
+        rf = processed / f"records_{k}.jsonl"  # explain.py writes val / test only, so train alerts have no drivers
+        if rf.exists() and rf.stat().st_mtime >= p.stat().st_mtime:  # older records belong to an older model
+            for line in rf.open():
+                r = json.loads(line)
+                if r["caseid"] in ids:
+                    drivers[r["caseid"], r["t_sec"]] = {e: r[e] and r[e]["top_drivers_text"] for e in EVENTS}
+    d = pd.concat(frames).sort_values(["caseid", "t_sec"])
+    return dict(tuple(d.groupby("caseid"))), drivers, {e: float(thr[e]["threshold"]) for e in EVENTS}
+
+
+def case_risk(d, t0, thr, drivers):
+    """risk + alerts of one case from its preds rows d (sorted by t_sec); p is null where the time is ineligible."""
+    t, risk, alerts = d.t_sec.to_numpy(), {}, []
+    for e in EVENTS:
+        el = d[f"eligible_{e}"].to_numpy(bool)
+        p = {h: np.where(el, d[f"p_fusion_{e}_{h}"].to_numpy(float), np.nan) for h in HS}
+        risk[e] = {"t_min": ((t - t0) / 60).round(2).tolist(), **{f"p{h}": sig3(p[h]) for h in HS}, "threshold": thr[e]}
+        lead = d.get(f"lead_specialist_{e}")  # val / test only
+        for i in np.flatnonzero(alarms(p[HH], d.caseid.to_numpy(), t, thr[e])):
+            alerts.append({"type": e, "t_min": round((t[i] - t0) / 60, 2), "p10": sig3(p[HH][i:i + 1])[0],
+                           "lead_specialist": None if lead is None else val(lead.iat[i]),
+                           "top_drivers": drivers.get((int(d.caseid.iat[i]), int(t[i])), {}).get(e)})
+    return {"risk": risk, "alerts": sorted(alerts, key=lambda a: a["t_min"])}
+
+
+def pick(ids, cohort, ev, split_of, n):
+    """The n cases to export: up to n // 2 val surgeries with an event first (the explorer opens on the first), then the
+    rest; cohort order within each."""
+    if ev is None or not split_of:
+        return ids[:n]
+    subj, has = cohort.set_index("caseid").subjectid, set(ev.caseid)
+    first = [c for c in ids if c in has and split_of.get(subj[c]) == "val"][: n // 2]
+    return first + [c for c in ids if c not in first][: n - len(first)]
+
+
 def case_json(df, row, ev=None, split_of=None):
     df = df.assign(rftn_ug_h=rftn_ug_h(df))
     g = df.groupby(-(-df.t_sec // STEP) * STEP)[SERIES].last()  # last finite value in (t - 10, t], like the 2 s grid
@@ -68,15 +132,20 @@ def export(max_cases=50, out=OUT):
     cohort = pd.read_csv(RAW / "cohort.csv")
     ids = [c for c in cohort.caseid if (RAW / f"{c:04d}.parquet").exists()]
     ev, split_of = labels()
-    pct_time, has, index = {}, {}, []
-    for i, c in enumerate(ids):
+    chosen = pick(ids, cohort, ev, split_of, max_cases)
+    by_case, drivers, thr = load_risk(set(chosen)) or ({}, {}, {})
+    pct_time, has, index = {}, {}, {}
+    for c in ids:
         df = pd.read_parquet(RAW / f"{c:04d}.parquet")
         pct_time[c], has[c] = df.drop(columns="t_sec").notna().mean(), df.drop(columns="t_sec").notna().any()
-        if i < max_cases:
-            case = case_json(df, cases.loc[c], ev, split_of)
-            dump(case, out / "cases" / f"{c}.json")
-            index.append({"caseid": int(c), "duration_min": case["duration_min"], **case["demographics"], "split": case.get("split")})
-    dump(index, out / "cases" / "index.json")
+        if c not in chosen:
+            continue
+        case = case_json(df, cases.loc[c], ev, split_of)
+        if c in by_case:
+            case.update(case_risk(by_case[c], cases.casestart[c], thr, drivers))
+        dump(case, out / "cases" / f"{c}.json")
+        index[c] = {"caseid": int(c), "duration_min": case["duration_min"], **case["demographics"], "split": case.get("split")}
+    dump([index[c] for c in chosen], out / "cases" / "index.json")
 
     c = cases.loc[ids]
     age = c.age.quantile([0, 0.25, 0.5, 0.75, 1]).round(1).tolist()

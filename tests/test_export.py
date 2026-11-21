@@ -3,11 +3,13 @@ import math
 import shutil
 import subprocess
 
+import numpy as np
 import pandas as pd
 import pytest
 
-from orew import RAW, ROOT
-from orew.export import PHASES, SERIES, STEP, export, labels, rftn_ug_h
+from orew import PROCESSED, RAW, ROOT
+from orew.evaluate import HH, HS, LOCK, alarms
+from orew.export import PHASES, SERIES, STEP, export, labels, rftn_ug_h, risk_sources
 
 
 def load(p):
@@ -20,7 +22,7 @@ def load(p):
 @pytest.fixture(scope="module")
 def out(tmp_path_factory):
     out = tmp_path_factory.mktemp("web")
-    if not export(max_cases=2, out=out):
+    if not export(max_cases=4, out=out):
         pytest.skip("no cached cases in data/raw")
     return out
 
@@ -28,7 +30,7 @@ def out(tmp_path_factory):
 def test_case_files_match_source(out):
     cases = pd.read_csv(RAW / "cases.csv", encoding="utf-8-sig").set_index("caseid")
     index = load(out / "cases" / "index.json")
-    assert len(index) == 2
+    assert len(index) == 4
     for entry in index:
         c = entry["caseid"]
         case, row = load(out / "cases" / f"{c}.json"), cases.loc[c]
@@ -73,6 +75,56 @@ def test_label_fields(out):
     coh = load(out / "cohort.json")
     assert sum(s["n_cases"] for s in coh["splits"].values()) == coh["n_cohort"]
     assert all(e["n_cases"] <= coh["n_labelled"] <= coh["n_cached"] for e in coh["events"].values())
+
+
+def risk_cases(out):
+    cases = [load(out / "cases" / f"{e['caseid']}.json") for e in load(out / "cases" / "index.json")]
+    if not any("risk" in c for c in cases):
+        pytest.skip("models.py has not run")
+    return cases
+
+
+def test_risk_and_alerts_match_preds_and_evaluate(out):
+    """Risk = the case's own-split fusion preds (null where ineligible); alerts = evaluate's simulator over the whole
+    split (rows sorted by caseid, t_sec, eligible and finite, threshold.json), restricted to the case."""
+    cases, info = risk_cases(out), pd.read_csv(RAW / "cases.csv", encoding="utf-8-sig").set_index("caseid")
+    thr = json.loads((PROCESSED / "models" / "threshold.json").read_text())
+    src, sims = risk_sources(), {}
+    assert cases[0]["split"] == "val" and cases[0]["events"]  # the explorer opens on a val surgery with events
+    for c in (c for c in cases if "risk" in c):
+        if c["split"] not in sims:
+            df = pd.read_parquet(src[c["split"]]).sort_values(["caseid", "t_sec"], ignore_index=True)
+            for e in thr:
+                mon = df[df[f"eligible_{e}"] & df[f"p_fusion_{e}_{HH}"].notna()]
+                a = alarms(mon[f"p_fusion_{e}_{HH}"].to_numpy(), mon.caseid.to_numpy(), mon.t_sec.to_numpy(), thr[e]["threshold"])
+                df[f"alarm_{e}"] = pd.Series(a, mon.index).reindex(df.index, fill_value=False)
+            sims[c["split"]] = df
+        d, t0 = sims[c["split"]].query(f"caseid == {c['caseid']}"), info.casestart[c["caseid"]]
+        for e, r in c["risk"].items():
+            assert r["threshold"] == thr[e]["threshold"]
+            assert r["t_min"] == ((d.t_sec - t0) / 60).round(2).tolist()
+            for h in HS:
+                p = d[f"p_fusion_{e}_{h}"].where(d[f"eligible_{e}"]).to_numpy()
+                got = np.array(r[f"p{h}"], dtype=float)  # None -> NaN
+                assert len(got) == len(r["t_min"]) and np.array_equal(np.isnan(got), np.isnan(p))
+                np.testing.assert_allclose(got, p, rtol=5e-3)
+            ok = [i for i, v in enumerate(r["p15"]) if v is not None]
+            assert all(r["p5"][i] <= r["p10"][i] <= r["p15"][i] for i in ok)
+            assert [a["t_min"] for a in c["alerts"] if a["type"] == e] == ((d.t_sec[d[f"alarm_{e}"]] - t0) / 60).round(2).tolist()
+        for a in c["alerts"]:
+            assert a["p10"] >= float(f"{thr[a['type']]['threshold']:.3g}")  # both rounded to 3 significant digits
+            assert a["top_drivers"] is None or all(isinstance(x, str) for x in a["top_drivers"])
+
+
+def test_test_split_risk_needs_lock(out, tmp_path):
+    for f in ["preds_oof", "preds_val", "preds_test"]:
+        (tmp_path / f"{f}.parquet").touch()
+    lock = tmp_path / "test.lock"
+    assert set(risk_sources(tmp_path, lock)) == {"train", "val"}
+    lock.touch()
+    assert set(risk_sources(tmp_path, lock)) == {"train", "val", "test"}
+    if not LOCK.exists():
+        assert not [c["caseid"] for c in risk_cases(out) if c.get("split") == "test" and ("risk" in c or "alerts" in c)]
 
 
 def test_page_script_parses():

@@ -62,6 +62,7 @@ def raw_case():
     d.loc[steps(65.5, 65.5).start, "map"] = 150.0
     d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
     d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
+    d.loc[steps(90, 90).start : steps(92, 92).start, "map"] = 60.0  # 61 steps: ends at 5520 s, on a prediction time
     d.loc[d.index[steps(110, 113)], "spo2"] = 85.0  # real hypoxemia, pleth fine
     d.loc[d.index[steps(119, 124)], ["hr", "etco2"]] = np.nan  # off the monitors, erratic pleth, SpO2 falls by <= 1
     d.loc[d.index[steps(119.5, 124)], "pleth_cv"] = 0.9
@@ -133,9 +134,9 @@ def test_event_conventions_and_artifact_runs():
     hypo = ev[ev.event == "hypotension"]
     # ADC -495 (60-61 min) is an all-artifact run; 54 s and 58 s dips are too short; the zero lines at 0-4 and 178-180
     # min are trimmed off the low MAP next to them (untrimmed they'd make those runs > 50 % artifact)
-    assert hypo.onset_sec.tolist() == [4 * 60, 40 * 60, 65 * 60, 80 * 60, 176.5 * 60]
-    assert hypo.duration_s.tolist() == [180, 180, 60, 60, 90] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
-    assert hypo.artifact_frac.tolist() == [0, 3 / 90, 1 / 30, 0, 0]
+    assert hypo.onset_sec.tolist() == [4 * 60, 40 * 60, 65 * 60, 80 * 60, 90 * 60, 176.5 * 60]
+    assert hypo.duration_s.tolist() == [180, 180, 60, 60, 122, 90] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
+    assert hypo.artifact_frac.tolist() == [0, 3 / 90, 1 / 30, 0, 0, 0]
     g = clean_case(raw_case())
     assert g["map"][steps(146, 146 + 40 / 60 + FILL * STEP / 60)].eq(60).all()  # the causal grid fills the dropout's head
     assert ev[ev.event == "hypoxemia"].onset_sec.tolist()[:1] == [110 * 60] and len(ev[ev.event == "hypoxemia"]) == 2  # probe-off at 130 min and motion at 140 min are not events
@@ -169,6 +170,8 @@ def test_every_time_kept_and_only_documented_exclusions():
             assert getattr(r, f"flag_{e}") == ((r.t_sec > x.end_sec) & (r.t_sec <= x.end_sec + 300)).any()
     assert not pt.eligible_hypotension[(pt.t_sec >= 158 * 60) & (pt.t_sec <= 160 * 60)].any()  # MAP gap
     assert not pt.eligible_hypotension[(pt.t_sec >= 40 * 60) & (pt.t_sec < 43 * 60)].any()  # in progress
+    r = pt.set_index("t_sec")  # t == end_sec: the run may go on, so still in progress and not yet "after" the event
+    assert not r.eligible_hypotension[5520] and not r.flag_hypotension[5520] and r.flag_hypotension[5550]
 
 
 def test_label_window_after_input_window():

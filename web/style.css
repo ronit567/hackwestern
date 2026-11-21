@@ -128,7 +128,8 @@ svg .mk-base line { stroke: var(--baseline); stroke-width: 2; }
 svg .mk-base circle { fill: var(--panel); stroke: var(--baseline); stroke-width: 1.5; }
 
 caption { text-align: left; font-weight: 600; padding: 1.25rem 0 .5rem; caption-side: top; }
-caption .note { font-weight: 400; }
+.scroll-hint { display: none; }
+@media (max-width: 760px) { .scroll-hint { display: inline; } }
 tr.group th { padding-top: 1rem; color: var(--muted); font-weight: 600; border-bottom: 0; }
 tr.final th { font-weight: 600; }
 .check { display: flex; align-items: center; gap: .6rem; }

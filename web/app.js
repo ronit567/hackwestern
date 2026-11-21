@@ -355,19 +355,24 @@ function headline(W) {
 const DISC = [["auroc", "AUROC"], ["auprc", "AUPRC"], ["brier", "Brier score", 3], ["sens_at_90spec", "Sensitivity at 90 % specificity, %", 0, true]];
 const cell = (m, d = 2, asPct) => h("td", {}, ciText(m, d, asPct ? (v) => fmt(v * 100) : undefined));
 
+// heading and sizes sit outside the scroll box, so on a phone they wrap instead of scrolling away with the table
+function evTable(ev, ...kids) {
+  const n = metrics.n?.[ev];
+  return [h("h3", {}, cap(ev)),
+    h("p", { class: "note" }, n ? `${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times.` : null,
+      h("span", { class: "scroll-hint" }, " Scroll the table sideways for more columns.")),
+    h("div", { class: "scroll" }, h("table", { class: "metrics" }, h("caption", { class: "vh" }, cap(ev)), kids))];
+}
+
 function metricTables() {
   const src = flagged("overall");
   if (!src) return [empty("Not computed.", RUN.evaluate)];
-  return Object.entries(src).map(([ev, byH]) => {
-    const n = metrics.n?.[ev];
-    return h("div", { class: "scroll" }, h("table", { class: "metrics" },
-      h("caption", {}, cap(ev), n ? h("span", { class: "note" }, `  ${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times`) : null),
+  return Object.entries(src).map(([ev, byH]) => evTable(ev,
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), DISC.map(([, l]) => h("th", { scope: "col" }, l)))),
       Object.entries(byH).map(([H, byM]) => h("tbody", {},
         h("tr", { class: "group" }, h("th", { scope: "rowgroup", colspan: DISC.length + 1 }, `${H} minutes ahead`)),
         metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
           h("th", { scope: "row" }, modelName(m)), DISC.map(([k, , d, p]) => cell(byM[m][k], d ?? 2, p))))))));
-  });
 }
 
 function metricsSection() {
@@ -430,11 +435,11 @@ function alertsSection() {
     "Event recall is the share of events with an alert in the 10 minutes before onset; repeat alarms within 5 minutes count once. Median lead runs from the first such alert and covers warned events only; the 5+ min share is of all events.", " An alarm is true if an onset follows within 10 minutes.")];
   for (const [ev, byH] of Object.entries(metrics.overall || {})) {
     const byM = byH[H] || {};
-    out.push(h("div", { class: "scroll" }, h("table", { class: "metrics" }, h("caption", {}, cap(ev)),
+    out.push(evTable(ev,
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), h("th", { scope: "col" }, "Threshold, %"), ALERT.map(([, l]) => h("th", { scope: "col" }, l)))),
       h("tbody", {}, metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
         h("th", { scope: "row" }, modelName(m)), h("td", {}, a.threshold?.[ev]?.[m] == null ? "n/a" : fmt(a.threshold[ev][m] * 100)),
-        ALERT.map(([k, , d, p]) => cell(byM[m][k], d, p))))))));
+        ALERT.map(([k, , d, p]) => cell(byM[m][k], d, p)))))));
   }
   fill("alerts", out);
 }

@@ -56,6 +56,10 @@ def raw_case():
     d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
     d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
     d.loc[d.index[steps(110, 113)], "spo2"] = 85.0  # real hypoxemia, pleth fine
+    d.loc[d.index[steps(119, 124)], ["hr", "etco2"]] = np.nan  # off the monitors, erratic pleth, SpO2 falls by <= 1
+    d.loc[d.index[steps(119.5, 124)], "pleth_cv"] = 0.9
+    k = steps(120, 124)
+    d.loc[d.index[k], "spo2"] = np.round(np.linspace(95, 80, k.stop - k.start))
     k = steps(174.5, 179.5)  # real gradual desaturation (<= 1 per reading) on a pleth with spikes past the rail
     d.loc[d.index[k], "spo2"] = np.round(np.linspace(97, 82, k.stop - k.start))
     d.loc[d.index[k][::8], "pleth_amp"] = 300.0
@@ -88,7 +92,8 @@ def test_clean_case_rules():
     assert not g.art_map[steps(96.5, 99)].any()
     for a, b in [(130.2, 134), (140.5, 144), (165, 167.5), (170.5, 174)]:  # probe off, motion, weak after flat, rail
         assert g.art_spo2[steps(a, b)].all()
-    assert not g.art_spo2[steps(100, 130)].any()  # includes the real hypoxemia at 110-113 min
+    assert not g.art_spo2[steps(100, 119)].any()  # includes the real hypoxemia at 110-113 min
+    assert g.art_spo2[steps(120, 124)].all() and not g.art_spo2[steps(124, 130)].any()  # no HR, no ETCO2, poor pleth
     assert not g.art_spo2[steps(174.5, 179.5)].any()  # gradual fall: pleth spikes alone don't make it artifact
     # ffill: the first FILL steps of a gap are filled, the rest stay NaN and are masked
     gap = steps(20, 21.5)
@@ -99,6 +104,8 @@ def test_clean_case_rules():
     assert g.nibp_map.notna().sum() == raw.nibp_map.ne(raw.nibp_map.shift()).sum()
     np.testing.assert_allclose(g.rftn_ug_h, np.r_[20 * raw.rftn_rate[: N // 2], 50 * raw.rftn50_rate[N // 2 :]])
     assert "rftn_rate" not in g and "rftn50_rate" not in g
+    raw.loc[raw.index[steps(119, 124)], "etco2"] = 30.0  # still ventilated: ECG off alone is not artifact
+    assert not clean_case(raw).art_spo2[steps(120, 124)].any()
 
 
 H = CFG["windows"]["horizons_min"]

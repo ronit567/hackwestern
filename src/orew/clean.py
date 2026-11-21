@@ -103,6 +103,7 @@ PLETH_CV_MAX = 0.5  # ~95th pct of 30 s pleth CV; emergence motion (0-95 swings)
 PLETH_FLAT, PLETH_RAIL = 2, 90  # amplitude of a pulseless pleth is 0.4-1.2 (ADC steps); the ADC rail is ~95
 SPO2_STEP = 5  # a fall between consecutive readings this big is 0.04% of readings
 SPO2_DROP = 3  # back within this of the pre-drop value ends an episode
+CAPNO_MIN = 10  # mmHg; a disconnected or extubated sampling line reads 0-1
 
 
 def map_artifact(m, sbp, dbp, beat_pp):
@@ -122,18 +123,22 @@ def map_artifact(m, sbp, dbp, beat_pp):
     return out
 
 
-def spo2_artifact(s, amp, cv):
-    """SpO2 < spo2_min, or a sudden-drop episode: a fall of >= SPO2_STEP vs the previous valid reading while the pleth
-    was poor within the last FILL steps starts it; it lasts until SpO2 is back within SPO2_DROP of the pre-drop value
-    or the pleth has been good for FILL steps. Real desaturations fell <= 4 per reading, so pleth spikes alone never
-    flag them; probe-off and motion falls were 5-15 in one reading. Poor pleth = NaN, flat, on the rail, < 1/4 of the
-    median of its last 5 min of non-flat bins (however old, so a long probe-off can't erase the level) or CV > PLETH_CV_MAX."""
+def spo2_artifact(s, amp, cv, hr, etco2):
+    """SpO2 < spo2_min; any reading while the pleth was poor within the last FILL steps and the patient is off the
+    monitors (no HR > 0 and no ETCO2 >= CAPNO_MIN in the last FILL + 1 steps: start of recording, transfer, emergence
+    motion; the 7 such events inspected were probe/motion artifact, while ECG noise alone in a ventilated patient hid
+    real desaturations); or a sudden-drop episode: a fall of >= SPO2_STEP vs the previous valid reading while the
+    pleth was poor within the last FILL steps starts it; it lasts until SpO2 is back within SPO2_DROP of the pre-drop
+    value or the pleth has been good for FILL steps. Real desaturations fell <= 4 per reading, so pleth spikes alone
+    never flag them; probe-off and motion falls were 5-15 in one reading. Poor pleth = NaN, flat, on the rail, < 1/4 of
+    the median of its last 5 min of non-flat bins (however old, so a long probe-off can't erase the level) or CV > PLETH_CV_MAX."""
     flat = amp < PLETH_FLAT
     level = amp[amp >= PLETH_FLAT].rolling(PLETH_LEVEL, min_periods=PLETH_LEVEL // 5).median().reindex(amp.index).ffill()
     poor = amp.isna() | flat | (amp > PLETH_RAIL) | (amp < level / 4) | (cv > PLETH_CV_MAX)
     good = (~poor.rolling(FILL, min_periods=1).max().astype(bool)).to_numpy()
+    off = ~((hr > 0) | (etco2 >= CAPNO_MIN)).rolling(FILL + 1, min_periods=1).max().astype(bool).to_numpy()
     s = s.to_numpy()
-    out = s < A["spo2_min"]
+    out = (s < A["spo2_min"]) | off & ~good
     on, prev, ref = False, np.nan, np.nan
     for i in np.flatnonzero(np.isfinite(s) & ~out):  # episode state carries over, so a loop
         if on and (good[i] or s[i] >= ref - SPO2_DROP):
@@ -156,7 +161,7 @@ def clean_case(raw):
     the rest stays NaN: whether a gap will last > 30 s is unknown at the time), masks, artifact flags for labels."""
     m, s = raw["map"].to_numpy(), raw.spo2.to_numpy()
     art_map = map_artifact(m, raw.sbp.to_numpy(), raw.dbp.to_numpy(), raw.beat_pp.to_numpy())
-    art_spo2 = spo2_artifact(raw.spo2, raw.pleth_amp, raw.pleth_cv)
+    art_spo2 = spo2_artifact(raw.spo2, raw.pleth_amp, raw.pleth_cv, raw.hr, raw.etco2)
     x = raw.drop(columns=["t_sec", "nibp_map"])
     x.loc[art_map, ["map", "sbp", "dbp"]] = np.nan
     x.loc[pd.Series(art_map).rolling(BEAT_STEPS, min_periods=1).max().astype(bool), BEAT] = np.nan  # 12 s beat stats

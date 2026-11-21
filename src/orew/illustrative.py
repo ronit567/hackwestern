@@ -19,8 +19,9 @@ MODELS = ["baseline1", "baseline2", "snapshot", "fusion"]
 SKILL = {"baseline1": 0.0, "baseline2": 0.15, "snapshot": 0.7, "fusion": 1.0}  # share of the baseline1 -> fusion gap
 HS = ["5", "10", "15"]
 HEADLINE = "10"
-N = {"cases": 440, "subjects": 431, "times": 182_000, "events": 58}
-POS = {"5": 430, "10": 870, "15": 1290}  # times with an onset ahead (~15 per event at 10 min, as in the real val split)
+# a ~15 % split of the cohort plus ~2,000 more surgeries, at the real ~0.065 events per surgery
+N = {"cases": 440, "subjects": 431, "times": 182_000, "events": 28}
+POS = {"5": 210, "10": 420, "15": 620}  # times with an onset ahead (~15 per event at 10 min, as in the real val split)
 # (baseline1, fusion) point estimates; every other model sits between them by SKILL
 AUROC = {"5": (0.75, 0.86), "10": (0.70, 0.83), "15": (0.66, 0.79)}
 # AUPRC as a multiple of the prevalence of whatever times it is computed on, so it never falls below chance
@@ -28,13 +29,14 @@ LIFT = {"5": (7.5, 20.0), "10": (5.2, 13.0), "15": (4.2, 10.0)}
 BAND_LIFT = (1.3, 2.8)  # inside a narrow value band the current number says little, so lifts are small
 SENS = {"5": (0.42, 0.62), "10": (0.36, 0.55), "15": (0.31, 0.49)}
 # p10 alert simulation, headline horizon only (as in metrics.json): (baseline1, fusion, CI half-width).
-# 2 alarms/h over ~1,500 h is ~3,000 alarms for ~40 warned events (~2 true alarms each), hence ~35-50 false per true
+# 2 alarms/h over ~1,500 h is ~3,000 alarms for ~13-18 warned events (~2 true alarms each), hence ~80-120 false per true;
+# half-widths are binomial for 28 events
 ALERT = {
-    "false_per_true_alarm": (50.0, 34.0, None), "median_lead_min": (3.1, 5.6, 1.4),
-    "pct_warned_5min": (0.16, 0.36, 0.11), "event_recall": (0.45, 0.66, 0.12),
+    "false_per_true_alarm": (120.0, 80.0, None), "median_lead_min": (3.1, 5.6, 2.0),
+    "pct_warned_5min": (0.16, 0.36, 0.16), "event_recall": (0.45, 0.66, 0.18),
 }
-THRESHOLD = {"baseline1": 0.013, "baseline2": 0.014, "snapshot": 0.019, "fusion": 0.021}
-BINS = [("90-94", 90, 95, 1450, 70, (0.60, 0.73)), (">=95", 95, 101, 179_500, 600, (0.62, 0.77))]  # 90-94: ~5 % positive, as in the real split
+THRESHOLD = {"baseline1": 0.0063, "baseline2": 0.0068, "snapshot": 0.0092, "fusion": 0.0101}
+BINS = [("90-94", 90, 95, 1450, 70, (0.60, 0.73)), (">=95", 95, 101, 179_500, 340, (0.62, 0.77))]  # 90-94: ~5 % positive, as in the real split
 # (label, times, share of positives, AUROC offset): times sum to N["times"] in every attribute
 GROUPS = {
     "age_band": [("18-39", 21_000, 0.06, 0.02), ("40-59", 62_000, 0.30, 0.0), ("60-74", 78_000, 0.47, -0.01), (">=75", 21_000, 0.17, -0.03)],

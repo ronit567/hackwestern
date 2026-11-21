@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OR early warning results</title>
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>Operating room early warning</h1>
+  <p class="lead">Every 30 s during surgery, the model estimates whether hypotension (arterial MAP below 65 mmHg for 60 s) or hypoxemia (SpO2 below 90 % for 2 min) starts in the next 5, 10 or 15 minutes. The claim under test: it warns earlier and more accurately than watching the current number, including while that number still looks normal.</p>
+  <p id="status" class="status"></p>
+  <nav aria-label="Sections">
+    <a href="#overview">Cohort</a>
+    <a href="#headline">Headline</a>
+    <a href="#metrics">Metrics</a>
+    <a href="#calibration">Calibration</a>
+    <a href="#alerts">Alerts</a>
+    <a href="#subgroups">Subgroups</a>
+    <a href="#cases">Surgeries</a>
+  </nav>
+</header>
+<main>
+  <section id="overview" aria-labelledby="overview-h"><h2 id="overview-h">Cohort</h2><div class="body"></div></section>
+  <section id="headline" aria-labelledby="headline-h"><h2 id="headline-h">Against the current number</h2><div class="body"></div></section>
+  <section id="metrics" aria-labelledby="metrics-h"><h2 id="metrics-h">Metrics by event, horizon and model</h2><div class="body"></div></section>
+  <section id="calibration" aria-labelledby="calibration-h"><h2 id="calibration-h">Calibration</h2><div class="body"></div></section>
+  <section id="alerts" aria-labelledby="alerts-h"><h2 id="alerts-h">Alerts and lead time</h2><div class="body"></div></section>
+  <section id="subgroups" aria-labelledby="subgroups-h"><h2 id="subgroups-h">Subgroups</h2><div class="body"></div></section>
+  <section id="cases" aria-labelledby="cases-h"><h2 id="cases-h">Surgeries</h2><div class="body"></div></section>
+</main>
+<noscript><p>This page draws its charts with JavaScript. The data is in <code>reports/web/*.json</code>.</p></noscript>
+</body>
+</html>

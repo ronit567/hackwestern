@@ -36,6 +36,7 @@ def raw_case():
     d.loc[d.index[steps(4, 7)], "map"] = 55.0  # placed while MAP is low: event from the first real sample
     d.loc[d.index[steps(176.5, 178)], "map"] = 55.0  # 90 s low MAP, then the line is removed: event up to the last real sample
     d.loc[d.index[steps(178, 180)], ["map", "sbp", "dbp"]] = 0.0
+    d.loc[d.index[steps(179.6, 180)], "spo2"] = 30.0  # probe taken off: SpO2 ends before the file too
     for a in (30, 45.05, 100):  # flush: ramp, plateau above 200, ramp down, flat wave
         i = steps(a, a).start
         d.loc[i : i + 6, "map"] = [130, 230, 250, 250, 170, 140, 90]
@@ -183,8 +184,10 @@ def test_label_window_after_input_window():
 
 def test_censoring_at_end_of_recording():
     g, _, pt = table(raw_case())
-    last = g.t_sec.iat[-1]
-    for e in L.EV:
+    for e, c in L.EV.items():
+        s = c["signal"]
+        last = g.t_sec[g[f"{s}_raw"].notna() & ~g[f"art_{s}"]].max()
+        assert last < g.t_sec.iat[-1] - 20  # each label signal ends before the file
         for h in H:
             y, late = pt[f"y_{e}_{h}"], pt.t_sec + h * 60 > last
             assert y[late].isna().all() and y[~late].notna().all()

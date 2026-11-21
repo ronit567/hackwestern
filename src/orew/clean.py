@@ -101,7 +101,8 @@ BEAT_STEPS = int(pd.Timedelta(BEAT_WIN).total_seconds()) // STEP + 1  # grid ste
 PLETH_LEVEL = 300 // STEP  # trailing 5 min of pleth amplitude = its "own level"
 PLETH_CV_MAX = 0.5  # ~95th pct of 30 s pleth CV; emergence motion runs above it, real desaturations stayed below
 PLETH_FLAT, PLETH_RAIL = 2, 90  # amplitude of a pulseless pleth is 0.4-1.2 (ADC steps); the ADC rail is ~95
-SPO2_DROP = 3  # % below the last SpO2 read while the pleth was good
+SPO2_STEP = 5  # a fall between consecutive readings this big is 0.04% of readings
+SPO2_DROP = 3  # back within this of the pre-drop value ends an episode
 
 
 def map_artifact(m, sbp, dbp):
@@ -121,17 +122,27 @@ def map_artifact(m, sbp, dbp):
 
 
 def spo2_artifact(s, amp, cv):
-    """SpO2 < spo2_min, or below the last SpO2 read with a good pleth while the pleth is not good: a real
-    desaturation shows on a working pleth, a fall that appears once the pleth is lost or erratic is the probe.
-    Poor pleth = NaN, flat, on the rail, < 1/4 of the median of its last 5 min of non-flat bins (however old, so a
-    long probe-off can't erase the level) or CV > PLETH_CV_MAX (motion); good = not poor for FILL steps, so a brief
-    calm moment inside motion can't reset the reference to the artifactual value."""
+    """SpO2 < spo2_min, or a sudden-drop episode: a fall of >= SPO2_STEP vs the previous valid reading while the pleth
+    was poor within the last FILL steps starts it; it lasts until SpO2 is back within SPO2_DROP of the pre-drop value
+    or the pleth has been good for FILL steps. Real desaturations fell <= 4 per reading, so pleth spikes alone never
+    flag them; probe-off and motion falls were 5-15 in one reading. Poor pleth = NaN, flat, on the rail, < 1/4 of the
+    median of its last 5 min of non-flat bins (however old, so a long probe-off can't erase the level) or CV > PLETH_CV_MAX."""
     flat = amp < PLETH_FLAT
     level = amp[amp >= PLETH_FLAT].rolling(PLETH_LEVEL, min_periods=PLETH_LEVEL // 5).median().reindex(amp.index).ffill()
     poor = amp.isna() | flat | (amp > PLETH_RAIL) | (amp < level / 4) | (cv > PLETH_CV_MAX)
-    good = ~poor.rolling(FILL, min_periods=1).max().astype(bool)
-    ref = s.where(good & (s >= A["spo2_min"])).ffill()
-    return ((s < A["spo2_min"]) | (~good & (s < ref - SPO2_DROP))).to_numpy()
+    good = (~poor.rolling(FILL, min_periods=1).max().astype(bool)).to_numpy()
+    s = s.to_numpy()
+    out = s < A["spo2_min"]
+    on, prev, ref = False, np.nan, np.nan
+    for i in np.flatnonzero(np.isfinite(s) & ~out):  # episode state carries over, so a loop
+        if on and (good[i] or s[i] >= ref - SPO2_DROP):
+            on = False
+        if not on and not good[i] and prev - s[i] >= SPO2_STEP:
+            on, ref = True, prev
+        out[i] = on
+        if not on:
+            prev = s[i]
+    return out
 
 
 def carry(flag, v):

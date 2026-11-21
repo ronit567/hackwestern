@@ -56,6 +56,9 @@ def raw_case():
     d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
     d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
     d.loc[d.index[steps(110, 113)], "spo2"] = 85.0  # real hypoxemia, pleth fine
+    k = steps(174.5, 179.5)  # real gradual desaturation (<= 1 per reading) on a pleth with spikes past the rail
+    d.loc[d.index[k], "spo2"] = np.round(np.linspace(97, 82, k.stop - k.start))
+    d.loc[d.index[k][::8], "pleth_amp"] = 300.0
     d.loc[d.index[steps(150, 158)], ["map", "sbp", "dbp"]] = np.nan  # 8 min without MAP
     return d
 
@@ -81,6 +84,7 @@ def test_clean_case_rules():
     for a, b in [(130.2, 134), (140.5, 144), (165, 167.5), (170.5, 174)]:  # probe off, motion, weak after flat, rail
         assert g.art_spo2[steps(a, b)].all()
     assert not g.art_spo2[steps(100, 130)].any()  # includes the real hypoxemia at 110-113 min
+    assert not g.art_spo2[steps(174.5, 179.5)].any()  # gradual fall: pleth spikes alone don't make it artifact
     # ffill: the first FILL steps of a gap are filled, the rest stay NaN and are masked
     gap = steps(20, 21.5)
     assert g["map"][gap][:FILL].notna().all() and g["map"][gap][FILL:].isna().all()
@@ -107,7 +111,7 @@ def test_event_conventions_and_artifact_runs():
     assert hypo.onset_sec.tolist() == [40 * 60, 80 * 60]
     assert hypo.duration_s.tolist() == [180, 60] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
     assert hypo.artifact_frac.tolist() == [3 / 90, 0]
-    assert ev[ev.event == "hypoxemia"].onset_sec.tolist() == [110 * 60]  # probe-off at 130 min and motion at 140 min are not events
+    assert ev[ev.event == "hypoxemia"].onset_sec.tolist()[:1] == [110 * 60] and len(ev[ev.event == "hypoxemia"]) == 2  # probe-off at 130 min and motion at 140 min are not events
 
 
 def test_nibp_never_changes_hypotension():

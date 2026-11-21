@@ -258,12 +258,83 @@ function alertList(c) {
       `Drivers: ${(a.top_drivers || []).join("; ")}.`))));
 }
 
+// ---- results from metrics.json
+const MODEL = {
+  baseline1: "Baseline 1: current value", baseline2: "Baseline 2: value and 5 min slope",
+  snapshot: "Snapshot (XGBoost)", trajectory: "Trajectory (GRU and CNN)", pattern: "Pattern", fusion: "Fusion",
+};
+const modelName = (m) => (MODEL[m] || m) + (m === metrics.final_model ? " (final)" : "");
+const SIGNAL_OF = { hypotension: "MAP", hypoxemia: "SpO2" };
+const binLabel = (ev, l) => `${SIGNAL_OF[ev]} ${l.replace(">=", "≥ ").replace(">", "> ").replace("-", "–")}`;
+const ciText = (m, d = 2, f = (v) => fmt(v, d)) =>
+  m == null ? "n/a" : [f(m[0]), h("span", { class: "ci" }, `${f(m[1])}–${f(m[2])}`)];
+const HH = () => String(metrics.headline_horizon_min);
+
+// Rows of [label, sub, final, baseline] intervals on one shared x scale: filled circle = final model, open = baseline 1.
+function dumbbell(title, rows, W, ciPair) {
+  const ML = 8, MR = 16, RH = 46, TOP = 22;
+  const all = rows.flatMap((r) => [r.a, r.b]).filter(Boolean).flatMap((m) => m.slice(0, 3));
+  const lo = Math.floor(Math.min(...all) * 10) / 10, hi = Math.min(1, Math.ceil(Math.max(...all) * 10) / 10);
+  const x = lin(lo, hi, ML, W - MR), H = TOP + rows.length * RH + 22;
+  const g = [s("text", { class: "title", x: ML, y: 12 }, title)];
+  for (const v of ticks(lo, hi, W < 400 ? 3 : 5)) {
+    g.push(s("line", { class: "grid", x1: x(v), x2: x(v), y1: TOP, y2: H - 20 }));
+    g.push(s("text", { x: x(v), y: H - 4, "text-anchor": "middle" }, fmt(v, 2)));
+  }
+  rows.forEach((r, i) => {
+    const y = TOP + i * RH;
+    g.push(s("text", { x: ML, y: y + 14, class: "row-label" }, r.label, r.sub ? s("tspan", { class: "row-sub" }, `  ${r.sub}`) : null));
+    for (const [m, dy, cls, who] of [[r.b, 24, "mk-base", ciPair[1]], [r.a, 36, "mk-final", ciPair[0]]]) {
+      if (!m) continue;
+      g.push(s("g", { class: cls },
+        s("title", {}, `${who}: ${fmt(m[0], 3)} (95 % CI ${fmt(m[1], 3)}–${fmt(m[2], 3)})`),
+        s("line", { x1: x(m[1]), x2: x(m[2]), y1: y + dy, y2: y + dy }),
+        s("circle", { cx: x(m[0]), cy: y + dy, r: 4.5 })));
+    }
+  });
+  const table = h("table", { class: "vh" }, h("caption", {}, title),
+    h("tr", {}, h("th", {}, "Group"), h("th", {}, ciPair[0]), h("th", {}, ciPair[1])),
+    rows.map((r) => h("tr", {}, h("th", {}, `${r.label} ${r.sub || ""}`), h("td", {}, ciText(r.a, 3)), h("td", {}, ciText(r.b, 3)))));
+  return h("figure", { class: "dumbbell" }, s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" }, g), table);
+}
+
+const legend = () => h("p", { class: "legend" },
+  h("span", { class: "key key-final", "aria-hidden": "true" }), `${modelName(metrics.final_model)}  `,
+  h("span", { class: "key key-base", "aria-hidden": "true" }), `${MODEL.baseline1}. Bars are 95 % confidence intervals from ${fmt(metrics.bootstrap)} patient bootstrap resamples.`);
+
+function headline(W) {
+  const fm = metrics.final_model, H = HH(), out = [
+    h("p", {}, `Discrimination ${H} minutes ahead, inside each band of the current value. Baseline 1 sees only the current number, which says little inside a narrow band. The model has to beat it in every band, including the bands where the number still looks normal.`),
+    legend()];
+  for (const ev of Object.keys(metrics.bins || {})) {
+    const bins = metrics.bins[ev][H] || [], all = metrics.overall?.[ev]?.[H] || {};
+    const rows = (k) => [{ label: "All times", a: all[fm]?.[k], b: all.baseline1?.[k] },
+      ...bins.map((b) => ({ label: binLabel(ev, b.label), sub: `${fmt(b.n_pos)} of ${fmt(b.n)} times before an onset`, a: b.models[fm]?.[k], b: b.models.baseline1?.[k] }))];
+    const wins = bins.filter((b) => b.models[fm]?.auroc?.[0] > b.models.baseline1?.auroc?.[0]).length;
+    const cw = W >= 760 ? (W - 32) / 2 : W;
+    const o = all[fm], b1 = all.baseline1;
+    out.push(h("h3", {}, `${cap(ev)}, by current ${SIGNAL_OF[ev]}`),
+      h("p", { class: "verdict" }, `${modelName(fm)} has the higher AUROC in ${wins} of ${bins.length} ${SIGNAL_OF[ev]} bands (point estimates; check the intervals).`,
+        o?.median_lead_min && b1?.median_lead_min
+          ? ` Median warning lead ${fmt(o.median_lead_min[0], 1)} min against ${fmt(b1.median_lead_min[0], 1)} min; events warned at least 5 min ahead ${pct(o.pct_warned_5min?.[0])} against ${pct(b1.pct_warned_5min?.[0])}.`
+          : null),
+      h("div", { class: "pair" },
+        dumbbell("AUROC", rows("auroc"), cw, [modelName(fm), MODEL.baseline1]),
+        dumbbell("AUPRC", rows("auprc"), cw, [modelName(fm), MODEL.baseline1])));
+  }
+  fill("headline", ...out);
+}
+
 let cohort, metrics, index;
 
 function renderAll() {
   overview(cohort);
   for (const id of ["headline", "metrics", "calibration", "alerts", "subgroups"])
     if (!metrics) fill(id, empty("Not computed yet.", RUN.evaluate));
+  if (metrics) {
+    const W = document.querySelector("#headline .body").clientWidth;
+    headline(W);
+  }
   if (!index?.length) fill("cases", empty("No surgeries exported yet.", RUN.export));
   else { if (!picker) caseShell(); drawCase(); }
 }

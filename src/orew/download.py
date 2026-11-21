@@ -2,6 +2,7 @@
 import argparse
 import os
 import resource
+import socket
 import time
 from concurrent.futures import ProcessPoolExecutor
 from urllib.request import urlretrieve
@@ -19,6 +20,7 @@ WORKERS = 6
 NUMERIC = {k: [v] if isinstance(v, str) else v for k, v in CFG["tracks"]["numeric"].items()}
 WAVE = CFG["tracks"]["wave"]
 TRACKS = [n for v in NUMERIC.values() for n in v] + list(WAVE.values())
+socket.setdefaulttimeout(60)  # a stalled read must raise so attempt() retries; workers inherit it via import
 
 
 def cohort():

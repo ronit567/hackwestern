@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.signal import find_peaks
 
+import orew.download as d
 from orew.clean import FS, STEP, beat_grid, beats, bin_last, decimate, pleth_grid
 
 DUR = 300
@@ -83,3 +84,7 @@ def test_dpdt_resolves_quantised_wave():
     x = 80 + 40 * (np.sin(ph) + 0.3 * np.sin(2 * ph + 1) + 0.1 * np.sin(3 * ph + 2))
     true = (40 * 2 * np.pi * 1.3 * (np.cos(ph) + 0.6 * np.cos(2 * ph + 1) + 0.3 * np.cos(3 * ph + 2))).max()
     assert abs(beats(np.round(x).astype(np.float32)).dpdt.median() / true - 1) < 0.1
+
+
+def test_download_sockets_time_out():
+    assert d.socket.getdefaulttimeout() is not None  # set on import, so spawned workers get it too

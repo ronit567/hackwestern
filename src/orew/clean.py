@@ -139,8 +139,8 @@ def clean_case(raw):
     x.loc[art_map, ["map", "sbp", "dbp"]] = np.nan
     x.loc[pd.Series(art_map).rolling(BEAT_STEPS, min_periods=1).max().astype(bool), BEAT] = np.nan  # 12 s beat stats
     x.loc[art_spo2, "spo2"] = np.nan
-    x = x.ffill(limit=FILL)
     x.insert(x.columns.get_loc("rftn_rate"), "rftn_ug_h", (20 * x.pop("rftn_rate")).add(50 * x.pop("rftn50_rate"), fill_value=0))
+    x = x.ffill(limit=FILL)
     n = raw.nibp_map
     return pd.concat([
         raw[["t_sec"]],

@@ -34,7 +34,7 @@ function s(tag, attrs, ...kids) {
   el.append(...kids.flat(9).filter((k) => k != null && k !== false));
   return el;
 }
-const fill = (id, ...nodes) => document.querySelector(`#${id} .body`).replaceChildren(...nodes);
+const fill = (id, ...nodes) => document.querySelector(`#${id} .body`).replaceChildren(...nodes.flat(9).filter((n) => n != null));
 const empty = (what, cmd) => h("p", { class: "empty" }, `${what} Run `, h("code", {}, cmd), " to fill it.");
 const fmt = (v, d = 0) => (v == null ? "n/a" : v.toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const pct = (v, d = 0) => (v == null ? "n/a" : `${fmt(v * 100, d)} %`);
@@ -325,6 +325,44 @@ function headline(W) {
   fill("headline", ...out);
 }
 
+const DISC = [["auroc", "AUROC"], ["auprc", "AUPRC"], ["brier", "Brier score", 3], ["sens_at_90spec", "Sensitivity at 90 % specificity, %", 0, true]];
+const cell = (m, d = 2, asPct) => h("td", {}, ciText(m, d, asPct ? (v) => fmt(v * 100) : undefined));
+let exclFlagged = false;
+
+function metricTables() {
+  const src = metrics[exclFlagged ? "overall_excl_flagged" : "overall"] || {};
+  return Object.entries(src).map(([ev, byH]) => {
+    const n = metrics.n?.[ev];
+    return h("div", { class: "scroll" }, h("table", { class: "metrics" },
+      h("caption", {}, cap(ev), n ? h("span", { class: "note" }, `  ${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times`) : null),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), DISC.map(([, l]) => h("th", { scope: "col" }, l)))),
+      Object.entries(byH).map(([H, byM]) => h("tbody", {},
+        h("tr", { class: "group" }, h("th", { scope: "colgroup", colspan: DISC.length + 1 }, `${H} minutes ahead`)),
+        metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
+          h("th", { scope: "row" }, modelName(m)), DISC.map(([k, , d, p]) => cell(byM[m][k], d ?? 2, p))))))));
+  });
+}
+
+function metricsSection() {
+  const box = h("input", { type: "checkbox", id: "excl-flagged", checked: exclFlagged || null });
+  const tables = h("div", {}, metricTables());
+  box.onchange = () => { exclFlagged = box.checked; tables.replaceChildren(...metricTables()); };
+  const ab = metrics.ablation || {};
+  fill("metrics",
+    h("p", {}, "Every eligible prediction time, every 30 s. Intervals are 95 % patient-bootstrap CIs. Brier score: lower is better."),
+    h("p", { class: "pick" }, box, h("label", { for: "excl-flagged" }, "Leave out times within 5 min after an event ended")),
+    tables,
+    Object.keys(ab).length ? [
+      h("h3", {}, "Drug-feature ablation"),
+      h("p", { class: "note" }, "The same model trained with and without the infusion and anesthetic-agent features. Vasopressor infusions are rare in this cohort, so this mostly measures propofol and remifentanil."),
+      h("div", { class: "scroll" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Event", "Ahead", "Model", "AUROC with drugs", "AUROC without", "AUPRC with drugs", "AUPRC without"].map((l) => h("th", { scope: "col" }, l)))),
+        h("tbody", {}, Object.entries(ab).flatMap(([ev, byH]) => Object.entries(byH).map(([H, a]) =>
+          h("tr", {}, h("th", { scope: "row" }, cap(ev)), h("td", {}, `${H} min`), h("td", {}, MODEL[a.model] || a.model),
+            cell(a.with_drugs?.auroc), cell(a.without_drugs?.auroc), cell(a.with_drugs?.auprc), cell(a.without_drugs?.auprc)))))))]
+      : h("p", { class: "note" }, "Drug-feature ablation not computed."));
+}
+
 let cohort, metrics, index;
 
 function renderAll() {
@@ -334,6 +372,7 @@ function renderAll() {
   if (metrics) {
     const W = document.querySelector("#headline .body").clientWidth;
     headline(W);
+    metricsSection();
   }
   if (!index?.length) fill("cases", empty("No surgeries exported yet.", RUN.export));
   else { if (!picker) caseShell(); drawCase(); }

@@ -92,8 +92,8 @@ function niceStep(lo, hi, n) {
   const raw = (hi - lo) / n, p = 10 ** Math.floor(Math.log10(raw));
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((st) => st >= raw);
 }
-function ticks(lo, hi, n = 4) {
-  const step = niceStep(lo, hi, n), out = [];
+function ticks(lo, hi, n = 4, step = niceStep(lo, hi, n)) {
+  const out = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
   return out;
 }
@@ -204,7 +204,7 @@ function caseChart(c, W, readout) {
     if (r.risk) [lo, hi] = [0, 1];
     const n = r.h > 90 ? 4 : r.h >= 80 ? 3 : 2, st = niceStep(lo, hi || 1, n);
     [lo, hi] = [Math.floor(lo / st) * st, Math.ceil(hi / st) * st || 1];
-    const tk = ticks(lo, hi, n), y = lin(lo, hi, r.y0 + r.h, r.y0);
+    const tk = ticks(lo, hi, n, st), y = lin(lo, hi, r.y0 + r.h, r.y0);
     g.push(s("text", { class: "title", x: ML, y: r.y0 - 6 }, r.label, clipped ? s("tspan", { class: "row-sub" }, "  (brief peaks run off the top)") : null));
     for (const v of tk) {
       g.push(s("line", { class: "grid", x1: ML, x2: W - MR, y1: y(v), y2: y(v) }));

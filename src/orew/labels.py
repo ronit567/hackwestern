@@ -158,6 +158,7 @@ def plot_events(n):
                     b.axvline(x, color="0.4", ls=":", lw=0.8)
                 ax[0].text(x, 1.01, k, transform=ax[0].get_xaxis_transform(), ha="center", fontsize=8)
         ax[0].set_ylim(*ylim[s])
+        ax[0].set_xlim(-15, 15)
         ax[0].set_ylabel(s)
         ax[0].legend(loc="lower left", fontsize=7, frameon=False, ncol=3)
         ax[1].set_xlabel("minutes from onset")

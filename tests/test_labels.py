@@ -42,6 +42,10 @@ def raw_case():
     d.loc[d.index[steps(130, 134)], ["pleth_amp", "pleth_cv"]] = np.nan  # probe off: pleth lost, SpO2 low 3.8 min
     d.loc[d.index[steps(140, 144)], "pleth_cv"] = 0.9  # motion: pleth erratic, SpO2 steps down for 3.5 min
     d.loc[d.index[steps(140.5, 144)], "spo2"] = 86.0
+    d.loc[d.index[steps(160, 165)], ["pleth_amp", "spo2"]] = [0.8, np.nan]  # 5 min probe off, back on a weak pleth
+    d.loc[d.index[steps(165, 167.5)], ["pleth_amp", "spo2"]] = [4.0, 82.0]  # < 2.5 min: then it is the new level
+    d.loc[d.index[steps(170, 174)], "pleth_amp"] = 95.0  # pleth pinned on the ADC rail, calm CV
+    d.loc[d.index[steps(170.5, 174)], "spo2"] = 85.0
     d.loc[d.index[steps(130.2, 134)], "spo2"] = 80.0
     d.loc[d.index[steps(40, 43)], "map"] = 55.0  # real hypotension with three below-threshold artifact points
     d.loc[[steps(41, 41).start + k for k in (0, 10, 20)], "map"] = 5.0
@@ -69,7 +73,8 @@ def test_clean_case_rules():
     assert g.art_map[i : i + 6].all() and not g.art_map[i + 6]  # whole flush flagged, recovery sample kept
     assert (g["map"][i : i + 6] == raw["map"][i - 1]).all()  # bridged by the last valid MAP
     assert (g[BEAT][i : i + 6 + 6] == raw[BEAT].iloc[i - 1]).all().all()  # artifact beats replaced, 12 s window
-    assert g.art_spo2[steps(130.2, 134)].all() and g.art_spo2[steps(140.5, 144)].all()
+    for a, b in [(130.2, 134), (140.5, 144), (165, 167.5), (170.5, 174)]:  # probe off, motion, weak after flat, rail
+        assert g.art_spo2[steps(a, b)].all()
     assert not g.art_spo2[steps(100, 130)].any()  # includes the real hypoxemia at 110-113 min
     # ffill: the first FILL steps of a gap are filled, the rest stay NaN and are masked
     gap = steps(20, 21.5)

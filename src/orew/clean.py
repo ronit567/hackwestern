@@ -100,6 +100,7 @@ BEAT = ["beat_pp", "beat_dpdt", "beat_sys_area", "beat_hr", "beat_ppv", "beat_sb
 BEAT_STEPS = int(pd.Timedelta(BEAT_WIN).total_seconds()) // STEP + 1  # grid steps a beat window can reach back
 PLETH_LEVEL = 300 // STEP  # trailing 5 min of pleth amplitude = its "own level"
 PLETH_CV_MAX = 0.5  # ~95th pct of 30 s pleth CV; emergence motion runs above it, real desaturations stayed below
+PLETH_FLAT, PLETH_RAIL = 2, 90  # amplitude of a pulseless pleth is 0.4-1.2 (ADC steps); the ADC rail is ~95
 SPO2_DROP = 3  # % below the last SpO2 read while the pleth was good
 
 
@@ -119,10 +120,12 @@ def map_artifact(m, sbp, dbp):
 def spo2_artifact(s, amp, cv):
     """SpO2 < spo2_min, or below the last SpO2 read with a good pleth while the pleth is not good: a real
     desaturation shows on a working pleth, a fall that appears once the pleth is lost or erratic is the probe.
-    Poor pleth = NaN, < 1/4 of its 5 min median (probe off) or CV > PLETH_CV_MAX (motion); good = not poor for FILL steps,
-    so a brief calm moment inside motion can't reset the reference to the artifactual value."""
-    level = amp.rolling(PLETH_LEVEL, min_periods=PLETH_LEVEL // 5).median()
-    poor = amp.isna() | (amp < level / 4) | (cv > PLETH_CV_MAX)
+    Poor pleth = NaN, flat, on the rail, < 1/4 of the median of its last 5 min of non-flat bins (however old, so a
+    long probe-off can't erase the level) or CV > PLETH_CV_MAX (motion); good = not poor for FILL steps, so a brief
+    calm moment inside motion can't reset the reference to the artifactual value."""
+    flat = amp < PLETH_FLAT
+    level = amp[amp >= PLETH_FLAT].rolling(PLETH_LEVEL, min_periods=PLETH_LEVEL // 5).median().reindex(amp.index).ffill()
+    poor = amp.isna() | flat | (amp > PLETH_RAIL) | (amp < level / 4) | (cv > PLETH_CV_MAX)
     good = ~poor.rolling(FILL, min_periods=1).max().astype(bool)
     ref = s.where(good & (s >= A["spo2_min"])).ffill()
     return ((s < A["spo2_min"]) | (~good & (s < ref - SPO2_DROP))).to_numpy()

@@ -1,0 +1,16 @@
+[project]
+name = "orew"
+version = "0.1.0"
+description = "Operating Room Early Warning System on VitalDB"
+requires-python = ">=3.11,<3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orew"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

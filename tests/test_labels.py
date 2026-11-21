@@ -189,7 +189,8 @@ def test_censoring_at_end_of_recording():
         last = g.t_sec[g[f"{s}_raw"].notna() & ~g[f"art_{s}"]].max()
         assert last < g.t_sec.iat[-1] - 20  # each label signal ends before the file
         for h in H:
-            y, late = pt[f"y_{e}_{h}"], pt.t_sec + h * 60 > last
+            # an onset at t + H is only an event once min_duration_s of it is recorded
+            y, late = pt[f"y_{e}_{h}"], pt.t_sec + h * 60 > last - c["min_duration_s"] + STEP
             assert y[late].isna().all() and y[~late].notna().all()
 
 

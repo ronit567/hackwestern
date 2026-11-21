@@ -59,8 +59,8 @@ def prediction_table(g, caseid, subjectid):
         out[f"flag_{e}"] = t - np.r_[-np.inf, end][np.searchsorted(end, t)] <= W["flag_after_event_s"]
         nxt = np.r_[on, np.nan][j] - t  # first onset strictly after t
         for h in W["horizons_min"]:
-            # censored, not negative, when the label window runs past the recording of the event's signal
-            out[f"y_{e}_{h}"] = np.where(t + h * 60 <= end_s, nxt <= h * 60, np.nan)
+            # censored, not negative, unless the signal is recorded long enough to confirm an onset at t + H
+            out[f"y_{e}_{h}"] = np.where(t + h * 60 <= end_s - c["min_duration_s"] + STEP, nxt <= h * 60, np.nan)
         out[f"next_onset_{e}_s"] = nxt
         out[f"{s}_now"] = g[s].to_numpy()[i]
     return pd.DataFrame(out)

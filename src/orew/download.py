@@ -95,13 +95,15 @@ def process(caseid):
 
 def attempt(caseid):
     t0, err = time.time(), None
-    for _ in range(3):
+    for k in range(3):
         try:
             process(caseid)
             err = None
             break
         except Exception as e:
             err = repr(e)
+            if k < 2:
+                time.sleep(10 * 3**k)  # 10 s then 30 s, to ride out a brief network drop or throttling
     return err, time.time() - t0, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 2**20  # bytes on macOS
 
 

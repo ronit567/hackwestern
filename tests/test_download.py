@@ -88,3 +88,18 @@ def test_dpdt_resolves_quantised_wave():
 
 def test_download_sockets_time_out():
     assert d.socket.getdefaulttimeout() is not None  # set on import, so spawned workers get it too
+
+
+def test_attempt_waits_between_retries(monkeypatch):
+    waits, fails = [], iter([True, True, False])
+
+    def process(c):
+        if next(fails):
+            raise OSError("503 Slow Down")
+
+    monkeypatch.setattr(d, "process", process)
+    monkeypatch.setattr(d.time, "sleep", waits.append)
+    assert d.attempt(1)[0] is None and waits == [10, 30]
+    monkeypatch.setattr(d, "process", lambda c: 1 / 0)
+    waits.clear()
+    assert "ZeroDivisionError" in d.attempt(1)[0] and waits == [10, 30]  # no wait after the last try

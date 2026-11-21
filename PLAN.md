@@ -38,6 +38,8 @@ hackathon/                      # git init here (the current repo is wrongly roo
     fusion.py                   # stacker on OOF outputs + phase + current value; isotonic on val; alert threshold on val
     evaluate.py                 # metrics, alarm simulation, value bins, subgroups, bootstrap CIs, flagged on/off, report.md
     explain.py                  # SHAP → plain-language drivers; writes per-(case, t) JSON records
+    export.py                   # reports/web/*.json for the results page (see "Results frontend")
+  web/                          # static results page: index.html, app.js, style.css
   tests/test_leakage.py         # all 13 checklist items + truncation tests
   data/{raw,processed}/  reports/   # gitignored data
 ```
@@ -183,3 +185,67 @@ Each stage runs as `uv run python -m orew.<stage>` and reads and writes Parquet 
 | GRU on MPS gives slow or buggy results | Low | Fall back to CPU; keep the model small |
 
 **Complexity: High** (multi-day). Skipped by decision: MOVER external validation and the replay demo.
+
+## Results frontend
+A static page (`web/index.html`, `app.js`, `style.css`: vanilla JS, hand-written SVG, no build, no CDN, works offline) that shows the cohort, the headline claim and single surgeries. There is no replay. It renders **only** what is in `reports/web/*.json`. If a file is missing, its section says which command to run.
+
+```
+uv run python -m orew.export                                   # cohort.json + cases/ (--max-cases, default 50)
+uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http://localhost:8000/web/
+```
+
+**Conventions:** JSON written with `allow_nan=False` (missing = `null`). Times are **minutes from `casestart`**. Probabilities and rates are fractions 0–1 (the page shows %). Every metric is `[estimate, ci_low, ci_high]` (95 % CI, patient bootstrap) or `null` if not computed. Object keys for horizons are strings: `"5"`, `"10"`, `"15"`. Events are `"hypotension"` and `"hypoxemia"`. Models are `baseline1, baseline2, snapshot, trajectory, pattern, fusion`.
+
+### `reports/web/cohort.json`: `export.py`
+| Field | Shape / unit | Source |
+|---|---|---|
+| `n_cohort`, `n_cached`, `n_subjects` | int | `cohort.csv` and cached `raw/{id}.parquet` |
+| `age` | `{min, q1, median, q3, max}` years | `cases.csv`, cached cases |
+| `sex`, `asa`, `department` | `{value: count}`; missing → `"unknown"` | ″ |
+| `emergency` | `{n, of}` (`emop == 1`) | ″ |
+| `median_duration_min` | float, `caseend − casestart` | ″ |
+| `signals` | `[{name, pct_time, pct_cases}]`: % of 2 s grid rows with data (mean over cases) and % of cases with any data, for each parquet column | cached parquets |
+| `events` *(later)* | `{event: {n_events, n_cases}}` | `labels.py` output |
+| `splits` *(later)* | `{train|val|test: {n_subjects, n_cases}}` | `processed/splits.json` |
+
+### `reports/web/cases/index.json` + `cases/{caseid}.json`: `export.py`
+- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for the first `--max-cases` cached cases, in cohort order. Later it also gets `split`.
+- `{caseid}.json`:
+
+| Field | Shape / unit |
+|---|---|
+| `caseid`, `duration_min` | int, float min |
+| `demographics` | the same clinical fields as an index entry |
+| `phases_min` | `{anestart, opstart, opend, aneend}` min (null if missing) |
+| `t_min` | `[n]` min. 10 s bins `(t − 10 s, t]`, each holding the last finite 2 s value (raw grid, before artifact cleaning) |
+| `series` | `{map, nibp_map, spo2, hr, etco2, bis, ppf_rate, rftn_rate}`, each `[n]` aligned with `t_min`, `null` where the bin has no data. Units: mmHg, mmHg, %, bpm, mmHg, BIS 0–100, mL/h, mL/h |
+| `split` *(later, labels.py)* | `"train" | "val" | "test"`. The page labels risk traces from train cases as out-of-fold |
+| `events` *(later, labels.py)* | `[{type, onset_min, end_min}]` |
+| `risk` *(later, fusion/explain.py)* | `{event: {t_min: [m], p5: [m], p10: [m], p15: [m], threshold: float}}` on the 30 s prediction grid, `null` at dropped times |
+| `alerts` *(later, explain.py)* | `[{type, t_min, p10, lead_specialist, top_drivers: [str, str, str]}]`: fired alerts (after the 5 min refractory period) with the plain-language drivers from that record |
+
+When those stage outputs exist, `export.py` adds the *(later)* fields. The page already draws them if present: shaded events, risk panels with the threshold, alert ticks and drivers.
+
+### `reports/web/metrics.json`: written by `evaluate.py` (`--split val|test`)
+```
+{
+  "split": "val",                      # "val" | "test"
+  "final_model": "fusion",             # compared with baseline1 in the headline; any computed model
+  "models": [...],                     # models computed, in display order
+  "horizons_min": [5, 10, 15], "headline_horizon_min": 10, "bootstrap": 1000,
+  "n": {event: {cases, subjects, times, events}},
+  "alerts": {"chosen_on": "val", "alarms_per_hour_target": 2.0,
+             "threshold": {event: {model: p10_threshold}}},        # every model alarms at the same rate
+  "overall":              {event: {H: {model: {metric: [e, lo, hi]}}}},
+  "overall_excl_flagged": same shape, times flagged within 5 min after an event dropped,
+  "bins":        {event: {H: [{label: "65-70", lo: 65, hi: 70, n, n_pos,
+                                models: {model: {auroc: [e, lo, hi], auprc: [e, lo, hi]}}}]}},
+  "subgroups":   {event: {H: {attr: [{label, n, n_pos, models: {model: {auroc, auprc}}}]}}},
+  "reliability": {event: {H: {model: [{p, obs, n}]}}},            # mean predicted, observed rate, count per bin
+  "ablation":    {event: {H: {model: "snapshot", with_drugs: {auroc, auprc}, without_drugs: {auroc, auprc}}}}
+}
+```
+- `metric` ∈ `auroc, auprc, brier, sens_at_90spec, alarms_per_hour, false_per_true_alarm, median_lead_min, pct_warned_5min, event_recall`. The alert metrics come from the p10 alert simulation (threshold from `alerts`, 5 min refractory period, `rearm_delta`). The page reads them at the headline horizon.
+- `bins`: MAP `65-70, 70-75, 75-80, >80` (hypotension) and SpO2 `90-94, >=95` (hypoxemia), from `config.yaml` `eval.*_bins` (`lo` inclusive, `hi` exclusive), binned on the current value at t.
+- `subgroups` attrs: `age_band` (`eval.age_bands`), `sex`, `asa`, `department`, `emergency`.
+- `split: "test"` is written only by the single locked test run. The page shows the split in the headline.

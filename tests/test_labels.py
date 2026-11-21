@@ -39,6 +39,9 @@ def raw_case():
         d.loc[i : i + 5, "sbp"] = d.loc[i : i + 5, "map"] + 3
         d.loc[i : i + 5, "dbp"] = d.loc[i : i + 5, "map"] - 3
     d.loc[d.index[steps(60, 61)], "map"] = -495.0  # raw ADC 0
+    i = steps(75, 75).start  # 50 s flush: 30 s above 200, then a 185 plateau sent without SBP/DBP
+    d.loc[i : i + 24, "map"] = [130] + [230] * 15 + [185] * 9
+    d.loc[i + 16 : i + 24, ["sbp", "dbp"]] = np.nan
     d.loc[d.index[steps(130, 134)], ["pleth_amp", "pleth_cv"]] = np.nan  # probe off: pleth lost, SpO2 low 3.8 min
     d.loc[d.index[steps(140, 144)], "pleth_cv"] = 0.9  # motion: pleth erratic, SpO2 steps down for 3.5 min
     d.loc[d.index[steps(140.5, 144)], "spo2"] = 86.0
@@ -73,6 +76,8 @@ def test_clean_case_rules():
     assert g.art_map[i : i + 6].all() and not g.art_map[i + 6]  # whole flush flagged, recovery sample kept
     assert (g["map"][i : i + 6] == raw["map"][i - 1]).all()  # bridged by the last valid MAP
     assert (g[BEAT][i : i + 6 + 6] == raw[BEAT].iloc[i - 1]).all().all()  # artifact beats replaced, 12 s window
+    i = steps(75, 75).start
+    assert g.art_map[i : i + 25].all() and not g.art_map[i + 25]  # plateau outlives the reference, still flagged
     for a, b in [(130.2, 134), (140.5, 144), (165, 167.5), (170.5, 174)]:  # probe off, motion, weak after flat, rail
         assert g.art_spo2[steps(a, b)].all()
     assert not g.art_spo2[steps(100, 130)].any()  # includes the real hypoxemia at 110-113 min

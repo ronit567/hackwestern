@@ -106,11 +106,14 @@ SPO2_DROP = 3  # % below the last SpO2 read while the pleth was good
 
 def map_artifact(m, sbp, dbp):
     """Range and pulse-pressure rules, then a jump of > map_jump_max vs the cleaned MAP at the previous step
-    (the last valid sample, as forward-filled up to FILL steps), so a flush plateau stays flagged until it returns."""
+    (the last valid sample, as forward-filled up to FILL steps), so a flush plateau stays flagged until it returns.
+    Once that reference has expired, the next valid sample must come with SBP and DBP: a flush longer than 30 s
+    sends MAP without them (median 110 mmHg, 40% outside 20-200, vs 5% when SBP/DBP are present)."""
     out = (m < A["map_min"]) | (m > A["map_max"]) | (sbp - dbp < A["pulse_pressure_min"])
+    pulsatile = np.isfinite(sbp) & np.isfinite(dbp)
     last = -FILL - 2
     for i in np.flatnonzero(np.isfinite(m) & ~out):  # recursive on the last valid sample, so a loop
-        if i - last <= FILL + 1 and abs(m[i] - m[last]) > A["map_jump_max"]:
+        if (abs(m[i] - m[last]) > A["map_jump_max"]) if i - last <= FILL + 1 else not pulsatile[i]:
             out[i] = True
         else:
             last = i

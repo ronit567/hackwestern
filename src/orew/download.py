@@ -69,7 +69,9 @@ def process(caseid):
     path = RAW / f"{caseid:04d}.vital"
     try:
         urlretrieve(f"{API}/{vitaldb.dataset.DATASET_VERSION}/{caseid}.vital", path)  # raises if truncated
-        vf = vitaldb.VitalFile(str(path), TRACKS)
+        vf = vitaldb.VitalFile()  # VitalFile(path) ignores load_vital's False on a corrupt file
+        if not vf.load_vital(str(path), TRACKS):
+            raise OSError("vitaldb could not read the .vital")
     finally:
         path.unlink(missing_ok=True)
     missing = [t for t in CFG["cohort"]["required_tracks"] if t not in vf.trks]

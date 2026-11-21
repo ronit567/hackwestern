@@ -2,6 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
+import pytest
+import vitaldb
 from scipy.signal import find_peaks
 
 import orew.download as d
@@ -116,3 +118,22 @@ def test_failed_csv_keeps_failures_not_retried(monkeypatch, tmp_path):
     (tmp_path / "failed.csv").write_text("caseid,error\n1,old\n2,old\n4444,old\n")
     d.run([1, 2])  # 1 is now cached, 2 is retried and fails again, 4444 is not in this run
     assert pd.read_csv(tmp_path / "failed.csv").values.tolist() == [[4444, "old"], [2, "new"]]
+
+
+def test_process_rejects_unreadable_vital(monkeypatch, tmp_path):
+    vf = vitaldb.VitalFile()
+    x = (80 + 20 * np.sin(2 * np.pi * 1.2 * t[: 60 * FS])).astype(np.float32)
+    vf.add_track("SNUADC/ART", [{"dt": vf.dtstart + i, "val": x[i * FS : (i + 1) * FS]} for i in range(60)], srate=FS)
+    vf.add_track("Solar8000/ART_MBP", [{"dt": vf.dtstart + 2 * i, "val": 80.0} for i in range(30)])
+    vf.dtend = vf.dtstart + 60
+    vf.to_vital(str(tmp_path / "good"), packed=False)
+    good = (tmp_path / "good").read_bytes()
+    bad = good[:-8] + bytes(b ^ 0xFF for b in good[-8:-4]) + good[-4:]  # wrong gzip CRC32: vitaldb prints and goes on
+    monkeypatch.setattr(d, "RAW", tmp_path)
+    monkeypatch.setattr(d, "urlretrieve", lambda url, p: p.write_bytes(bad))
+    with pytest.raises(OSError, match="vitaldb"):
+        d.process(1)
+    assert not (tmp_path / "0001.parquet").exists() and not (tmp_path / "0001.vital").exists()
+    monkeypatch.setattr(d, "urlretrieve", lambda url, p: p.write_bytes(good))
+    d.process(1)
+    assert pd.read_parquet(tmp_path / "0001.parquet")["map"].max() == 80

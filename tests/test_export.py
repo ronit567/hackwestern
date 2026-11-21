@@ -8,8 +8,8 @@ import pandas as pd
 import pytest
 
 from orew import PROCESSED, RAW, ROOT
-from orew.evaluate import HH, HS, LOCK, alarms
-from orew.export import PHASES, SERIES, STEP, export, labels, rftn_ug_h, risk_sources
+from orew.evaluate import EVENTS, HH, HS, alarms
+from orew.export import PHASES, SERIES, STEP, export, labels, load_risk, rftn_ug_h, risk_sources
 
 
 def load(p):
@@ -116,15 +116,20 @@ def test_risk_and_alerts_match_preds_and_evaluate(out):
             assert a["top_drivers"] is None or all(isinstance(x, str) for x in a["top_drivers"])
 
 
-def test_test_split_risk_needs_lock(out, tmp_path):
-    for f in ["preds_oof", "preds_val", "preds_test"]:
-        (tmp_path / f"{f}.parquet").touch()
+def test_test_split_risk_needs_lock(tmp_path):
+    """Synthetic processed dir: test-split preds are used only with the lock."""
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "threshold.json").write_text(json.dumps({e: {"threshold": 0.5, "chosen_on": "val"} for e in EVENTS}))
+    for f, split, c in [("preds_oof", "train", 1), ("preds_val", "val", 2), ("preds_test", "test", 3)]:
+        pd.DataFrame({"caseid": [c], "t_sec": [600], "split": [split], **{f"eligible_{e}": [True] for e in EVENTS},
+                      **{f"p_fusion_{e}_{h}": [0.25] for e in EVENTS for h in HS}}).to_parquet(tmp_path / f"{f}.parquet")
+    rec = {"caseid": 2, "t_sec": 600, "hypotension": {"p10": 0.25, "top_drivers_text": ["a", "b", "c"]}, "hypoxemia": None}
+    (tmp_path / "records_val.jsonl").write_text(json.dumps(rec) + "\n")
     lock = tmp_path / "test.lock"
-    assert set(risk_sources(tmp_path, lock)) == {"train", "val"}
+    by_case, drivers, _ = load_risk({1, 2, 3}, tmp_path, lock)
+    assert set(by_case) == {1, 2} and drivers[2, 600]["hypotension"] == ["a", "b", "c"]
     lock.touch()
-    assert set(risk_sources(tmp_path, lock)) == {"train", "val", "test"}
-    if not LOCK.exists():
-        assert not [c["caseid"] for c in risk_cases(out) if c.get("split") == "test" and ("risk" in c or "alerts" in c)]
+    assert set(load_risk({1, 2, 3}, tmp_path, lock)[0]) == {1, 2, 3}
 
 
 def test_page_script_parses():

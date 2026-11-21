@@ -92,3 +92,65 @@ def decimate(x):
     """Causal block mean to the model rate; output sample i covers [i/100, (i+1)/100) s."""
     m = len(x) // DEC
     return x[: m * DEC].reshape(m, DEC).mean(1).astype(np.float32)
+
+
+A = CFG["artifact"]
+FILL = CFG["grid"]["ffill_max_s"] // STEP
+BEAT = ["beat_pp", "beat_dpdt", "beat_sys_area", "beat_hr", "beat_ppv", "beat_sbp_sd"]
+BEAT_STEPS = int(pd.Timedelta(BEAT_WIN).total_seconds()) // STEP + 1  # grid steps a beat window can reach back
+PLETH_LEVEL = 300 // STEP  # trailing 5 min of pleth amplitude = its "own level"
+SPO2_DROP = 3  # % below the last SpO2 read while the pleth was good
+
+
+def map_artifact(m, sbp, dbp):
+    """Range and pulse-pressure rules, then a jump of > map_jump_max vs the cleaned MAP at the previous step
+    (the last valid sample, as forward-filled up to FILL steps), so a flush plateau stays flagged until it returns."""
+    out = (m < A["map_min"]) | (m > A["map_max"]) | (sbp - dbp < A["pulse_pressure_min"])
+    last = -FILL - 2
+    for i in np.flatnonzero(np.isfinite(m) & ~out):  # recursive on the last valid sample, so a loop
+        if i - last <= FILL + 1 and abs(m[i] - m[last]) > A["map_jump_max"]:
+            out[i] = True
+        else:
+            last = i
+    return out
+
+
+def spo2_artifact(s, amp):
+    """SpO2 < spo2_min, or below the last good-pleth SpO2 while the pleth is poor (NaN or < 1/4 of its 5 min median):
+    a real desaturation shows on a working pleth, a fall that only appears once the pleth collapses is the probe."""
+    level = amp.rolling(PLETH_LEVEL, min_periods=PLETH_LEVEL // 5).median()
+    poor = amp.isna() | (amp < level / 4)
+    ref = s.where(~poor & (s >= A["spo2_min"])).ffill()
+    return ((s < A["spo2_min"]) | (poor & (s < ref - SPO2_DROP))).to_numpy()
+
+
+def carry(flag, v):
+    """A per-sample flag carried along with its value by the same <= FILL step forward-fill."""
+    return pd.Series(np.where(np.isnan(v), np.nan, flag)).ffill(limit=FILL).fillna(0).astype(bool)
+
+
+def clean_case(raw):
+    """Causal cleaning of a raw 2 s grid: artifact -> NaN, ffill <= FILL steps (a gap's first 30 s is filled,
+    the rest stays NaN: whether a gap will last > 30 s is unknown at the time), masks, artifact flags for labels."""
+    m, s = raw["map"].to_numpy(), raw.spo2.to_numpy()
+    art_map = map_artifact(m, raw.sbp.to_numpy(), raw.dbp.to_numpy())
+    art_spo2 = spo2_artifact(raw.spo2, raw.pleth_amp)
+    x = raw.drop(columns=["t_sec", "nibp_map"])
+    x.loc[art_map, ["map", "sbp", "dbp"]] = np.nan
+    x.loc[pd.Series(art_map).rolling(BEAT_STEPS, min_periods=1).max().astype(bool), BEAT] = np.nan  # 12 s beat stats
+    x.loc[art_spo2, "spo2"] = np.nan
+    x = x.ffill(limit=FILL)
+    x.insert(x.columns.get_loc("rftn_rate"), "rftn_ug_h", (20 * x.pop("rftn_rate")).add(50 * x.pop("rftn50_rate"), fill_value=0))
+    n = raw.nibp_map
+    return pd.concat([
+        raw[["t_sec"]],
+        x,
+        pd.DataFrame({
+            "nibp_map": n.where(n.ne(n.ffill().shift())),  # cuff re-sent every 2 s: a reading only when it changes; no ffill
+            "map_raw": raw["map"].ffill(limit=FILL),  # label signals keep artifact at its raw value
+            "spo2_raw": raw.spo2.ffill(limit=FILL),
+            "art_map": carry(art_map, m),
+            "art_spo2": carry(art_spo2, s),
+        }),
+        x.isna().astype("int8").add_suffix("_missing"),
+    ], axis=1)

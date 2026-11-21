@@ -63,6 +63,8 @@ def raw_case():
     d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
     d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
     d.loc[steps(90, 90).start : steps(92, 92).start, "map"] = 60.0  # 61 steps: ends at 5520 s, on a prediction time
+    d.loc[d.index[steps(87, 88 + 1 / 3)], "map"] = 55.0  # 80 s run, 75 % zero line between real ends: no event
+    d.loc[d.index[steps(87 + 1 / 6, 88 + 1 / 6)], ["map", "sbp", "dbp"]] = 0.0
     d.loc[d.index[steps(110, 113)], "spo2"] = 85.0  # real hypoxemia, pleth fine
     d.loc[d.index[steps(119, 124)], ["hr", "etco2"]] = np.nan  # off the monitors, erratic pleth, SpO2 falls by <= 1
     d.loc[d.index[steps(119.5, 124)], "pleth_cv"] = 0.9

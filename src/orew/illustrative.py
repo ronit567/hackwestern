@@ -23,7 +23,9 @@ N = {"cases": 440, "subjects": 431, "times": 182_000, "events": 58}
 POS = {"5": 430, "10": 870, "15": 1290}  # times with an onset ahead (~15 per event at 10 min, as in the real val split)
 # (baseline1, fusion) point estimates; every other model sits between them by SKILL
 AUROC = {"5": (0.75, 0.86), "10": (0.70, 0.83), "15": (0.66, 0.79)}
-AUPRC = {"5": (0.018, 0.055), "10": (0.025, 0.07), "15": (0.03, 0.08)}
+# AUPRC as a multiple of the prevalence of whatever times it is computed on, so it never falls below chance
+LIFT = {"5": (7.5, 20.0), "10": (5.2, 13.0), "15": (4.2, 10.0)}
+BAND_LIFT = (1.3, 2.8)  # inside a narrow value band the current number says little, so lifts are small
 SENS = {"5": (0.42, 0.62), "10": (0.36, 0.55), "15": (0.31, 0.49)}
 # p10 alert simulation, headline horizon only (as in metrics.json): (baseline1, fusion, CI half-width).
 # 2 alarms/h over ~1,500 h is ~3,000 alarms for ~40 warned events (~2 true alarms each), hence ~35-50 false per true
@@ -32,7 +34,7 @@ ALERT = {
     "pct_warned_5min": (0.16, 0.36, 0.11), "event_recall": (0.45, 0.66, 0.12),
 }
 THRESHOLD = {"baseline1": 0.013, "baseline2": 0.014, "snapshot": 0.019, "fusion": 0.021}
-BINS = [("90-94", 90, 95, 1450, 230, (0.60, 0.73)), (">=95", 95, 101, 179_500, 600, (0.62, 0.77))]
+BINS = [("90-94", 90, 95, 1450, 70, (0.60, 0.73)), (">=95", 95, 101, 179_500, 600, (0.62, 0.77))]  # 90-94: ~5 % positive, as in the real split
 # (label, times, share of positives, AUROC offset): times sum to N["times"] in every attribute
 GROUPS = {
     "age_band": [("18-39", 21_000, 0.06, 0.02), ("40-59", 62_000, 0.30, 0.0), ("60-74", 78_000, 0.47, -0.01), (">=75", 21_000, 0.17, -0.03)],
@@ -64,10 +66,10 @@ def events_in(n_pos, H):
     return max(1.0, n_pos * N["events"] / POS[H])
 
 
-def disc(m, H, auroc_pair, auprc_scale, events, shift=0.0):
+def disc(m, auroc_pair, lift_pair, prev, events, shift=0.0):
     a = mix(auroc_pair, m) + shift
     return {"auroc": ci(a, 0.45 / math.sqrt(events), hi=0.99),
-            "auprc": ratio_ci(mix(AUPRC[H], m) * auprc_scale, 2.5 / math.sqrt(events))}
+            "auprc": ratio_ci(mix(lift_pair, m) * prev, 2.5 / math.sqrt(events))}
 
 
 def overall(excl):
@@ -77,7 +79,7 @@ def overall(excl):
         out[H] = {}
         for m in MODELS:
             # flagged times (just after an event) are easy positives, so leaving them out costs a little
-            d = disc(m, H, AUROC[H], 0.85 if excl else 1.0, N["events"], -0.015 if excl else 0.0)
+            d = disc(m, AUROC[H], LIFT[H], prev * (0.85 if excl else 1.0), N["events"], -0.015 if excl else 0.0)
             d["brier"] = ratio_ci(prev * (1 - prev) * (1 - 0.08 * SKILL[m]), 0.15)
             d["sens_at_90spec"] = ci(mix(SENS[H], m) - (0.02 if excl else 0.0), 0.9 / math.sqrt(N["events"]))
             if H == HEADLINE:
@@ -90,12 +92,15 @@ def overall(excl):
 
 
 def bins(excl):
-    return {H: [{"label": label, "lo": lo, "hi": hi, "n": round(n * (0.97 if excl else 1)),
-                 "n_pos": round(n_pos * POS[H] / POS[HEADLINE] * (0.85 if excl else 1)),
-                 "models": {m: disc(m, H, (pair[0] + AUROC[H][0] - AUROC[HEADLINE][0], pair[1] + AUROC[H][1] - AUROC[HEADLINE][1]),
-                                    0.6, events_in(n_pos * POS[H] / POS[HEADLINE], H), -0.015 if excl else 0.0)
-                            for m in MODELS}}
-                for label, lo, hi, n, n_pos, pair in BINS] for H in HS}
+    out = {}
+    for H in HS:
+        out[H] = []
+        for label, lo, hi, n, n_pos, pair in BINS:
+            bn, bp = round(n * (0.97 if excl else 1)), round(n_pos * POS[H] / POS[HEADLINE] * (0.85 if excl else 1))
+            band = (pair[0] + AUROC[H][0] - AUROC[HEADLINE][0], pair[1] + AUROC[H][1] - AUROC[HEADLINE][1])
+            out[H].append({"label": label, "lo": lo, "hi": hi, "n": bn, "n_pos": bp,
+                           "models": {m: disc(m, band, BAND_LIFT, bp / bn, events_in(bp, H), -0.015 if excl else 0.0) for m in MODELS}})
+    return out
 
 
 def subgroups():
@@ -107,9 +112,9 @@ def subgroups():
             for i, (label, n, share, off) in enumerate(groups):
                 n_pos = left if i == len(groups) - 1 else round(share * POS[H])  # positives add up exactly
                 left -= n_pos
-                scale = ((n_pos / n) / (POS[H] / N["times"])) ** 0.8
+                prev = (POS[H] / N["times"]) ** 0.2 * (n_pos / n) ** 0.8  # lift shrinks a little where positives are dense
                 rows.append({"label": label, "n": n, "n_pos": n_pos,
-                             "models": {m: disc(m, H, AUROC[H], scale, events_in(n_pos, H), off) for m in MODELS}})
+                             "models": {m: disc(m, AUROC[H], LIFT[H], prev, events_in(n_pos, H), off) for m in MODELS}})
             out[H][attr] = rows
     return out
 
@@ -143,7 +148,7 @@ def build():
         "subgroups": subgroups(),
         "reliability": reliability(),
         "ablation": {H: {"model": "snapshot", "with_drugs": {k: o[H]["snapshot"][k] for k in ("auroc", "auprc")},
-                         "without_drugs": disc("snapshot", H, AUROC[H], 0.93, N["events"], -0.012)} for H in HS},
+                         "without_drugs": disc("snapshot", AUROC[H], LIFT[H], 0.93 * POS[H] / N["times"], N["events"], -0.012)} for H in HS},
     }
 
 

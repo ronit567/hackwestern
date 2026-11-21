@@ -53,6 +53,15 @@ def test_counts_add_up():
             assert sum(p["n"] for p in pts) <= n["times"] and all(0 <= p["obs"] <= 1 for p in pts)
 
 
+def test_auprc_beats_chance_where_auroc_does():
+    rows = [r for H in D["bins"] for r in D["bins"][H] + D["bins_excl_flagged"][H]]
+    rows += [r for byA in D["subgroups"].values() for groups in byA.values() for r in groups]
+    for r in rows:
+        for m, d in r["models"].items():
+            if d["auroc"][0] > 0.5:
+                assert d["auprc"][0] > r["n_pos"] / r["n"], (r["label"], m)
+
+
 def test_modest_not_spectacular():
     head = D["overall"][str(D["headline_horizon_min"])]
     assert 0.80 <= head["fusion"]["auroc"][0] <= 0.85 and 0.65 <= head["baseline1"]["auroc"][0] <= 0.75

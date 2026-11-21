@@ -84,3 +84,26 @@ svg .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; }
 .facts dd { margin: 0; font-size: 1.0625rem; }
 table.signals td.bar { width: 40%; min-width: 6rem; padding-left: 0; }
 td.bar span { display: block; height: 8px; border-radius: 0 4px 4px 0; background: var(--ink); opacity: .7; }
+
+.pick { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin-bottom: 1rem; }
+.pick select { flex: 1 1 18rem; }
+.who { font-size: 1.0625rem; }
+.readout { color: var(--muted); font-size: .875rem; min-height: 3em; margin-bottom: .25rem; }
+.chart svg:focus-visible { outline-offset: 4px; }
+svg .s-map { stroke: var(--map); }
+svg .s-spo2 { stroke: var(--spo2); }
+svg .s-hr { stroke: var(--hr); }
+svg .s-etco2 { stroke: var(--etco2); }
+svg .s-bis { stroke: var(--bis); }
+svg .s-drug { stroke: var(--drug); }
+svg .s-risk { stroke: var(--risk); stroke-width: 2; }
+svg .nibp { fill: var(--panel); stroke: var(--ink); stroke-width: 1.25; }
+svg .ev-hypotension { fill: var(--ev-hypotension); }
+svg .ev-hypoxemia { fill: var(--ev-hypoxemia); }
+svg .alert { fill: var(--ink); }
+svg .cursor { stroke: var(--ink); stroke-width: 1; }
+svg [class^="phase-"] { fill: var(--grid); }
+svg .phase-opstart { fill: var(--grid-major); }
+svg text.phase-label { fill: var(--ink); font-size: 11px; }
+.alerts { padding-left: 1.25rem; }
+.alerts li { margin-bottom: .5rem; max-width: 70ch; }

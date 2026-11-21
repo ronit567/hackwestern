@@ -193,8 +193,9 @@ function caseChart(c, W, readout) {
       s("title", {}, `${name}: ${fmt(ph[a], 1)}–${fmt(ph[b], 1)} min`)));
     if (w > name.length * 7 + 8) g.push(s("text", { class: "phase-label", x: x(ph[a]) + w / 2, y: 16, "text-anchor": "middle" }, name));
   }
-  for (const k of ["anestart", "opstart", "opend", "aneend"])
-    if (ph[k] != null) g.push(s("line", { class: "phase", x1: x(ph[k]), x2: x(ph[k]), y1: 20, y2: H - 20 }));
+  // marker lines per panel, so they don't cross the panel titles
+  for (const r of rows) for (const k of ["anestart", "opstart", "opend", "aneend"])
+    if (ph[k] != null) g.push(s("line", { class: "phase", x1: x(ph[k]), x2: x(ph[k]), y1: r.y0, y2: r.y0 + r.h }));
 
   const summary = [];
   for (const r of rows) {
@@ -220,13 +221,14 @@ function caseChart(c, W, readout) {
     for (const e of (c.events || []).filter((e) => e.type === (r.event || r.ev)))
       inner.push(s("rect", { class: `ev ev-${e.type}`, x: x(e.onset_min), y: r.y0, width: Math.max(x(e.end_min) - x(e.onset_min), 2), height: r.h },
         s("title", {}, `${cap(e.type)} ${fmt(e.onset_min, 1)}–${fmt(e.end_min, 1)} min`)));
-    if (r.thr != null) inner.push(s("line", { class: "thr", x1: ML, x2: W - MR, y1: y(r.thr), y2: y(r.thr) }));
-    if (r.risk?.threshold != null) inner.push(s("line", { class: "thr", x1: ML, x2: W - MR, y1: y(r.risk.threshold), y2: y(r.risk.threshold) }));
+    const thr = r.thr ?? r.risk?.threshold;
+    if (thr != null) inner.push(s("line", { class: "thr", x1: ML, x2: W - MR, y1: y(thr), y2: y(thr) }));
     inner.push(s("path", { class: `line s-${r.cls || r.key}`, d: pathD(ts, vals, x, y) }));
     if (r.key === "map") // a cuff reading is held for up to 30 s on the grid, so draw only where the value changes
       c.series.nibp_map.forEach((v, i, a) => v != null && v !== a[i - 1] && inner.push(s("circle", { class: "nibp", cx: x(T[i]), cy: y(v), r: 3 })));
     for (const a of (c.alerts || []).filter((a) => r.risk && a.type === r.ev))
       inner.push(s("path", { class: "alert", d: `M${x(a.t_min)},${r.y0 + 9}l-5,-9h10z` }, s("title", {}, `Alert at ${fmt(a.t_min, 1)} min`)));
+    if (thr != null) inner.push(s("text", { class: "thr-label", x: W - MR - 4, y: y(thr) - 4, "text-anchor": "end" }, r.risk ? `alert at ${prob(thr, " %")}` : `${thr} ${r.unit}`));
     g.push(s("g", { "clip-path": `url(#${clip})` }, inner));
     const f = r.risk ? prob : fmt;
     summary.push(`${r.label}: ${seen.length ? `median ${f(median(seen))}, range ${f(Math.min(...seen))} to ${f(Math.max(...seen))}` : "no data"}.`);

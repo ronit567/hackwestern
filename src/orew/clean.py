@@ -151,6 +151,7 @@ def clean_case(raw):
     x.loc[art_spo2, "spo2"] = np.nan
     x.insert(x.columns.get_loc("rftn_rate"), "rftn_ug_h", (20 * x.pop("rftn_rate")).add(50 * x.pop("rftn50_rate"), fill_value=0))
     x = x.ffill(limit=FILL)
+    x.loc[x["map"].isna(), BEAT] = np.nan  # no valid monitor MAP: the ART channel is noise (dP/dt > 5000 in 91% of such rows)
     n = raw.nibp_map
     return pd.concat([
         raw[["t_sec"]],

@@ -85,6 +85,7 @@ def test_clean_case_rules():
     gap = steps(20, 21.5)
     assert g["map"][gap][:FILL].notna().all() and g["map"][gap][FILL:].isna().all()
     assert (g.map_missing[gap][FILL:] == 1).all() and g.map_missing[steps(25, 29)].eq(0).all()
+    assert g[BEAT][gap][FILL:].isna().all().all() and (g.beat_pp_missing[gap][FILL:] == 1).all()  # beats need MAP
     assert g.fio2.notna().all() and g.fio2_missing.eq(0).all()  # ventilator cadence bridged
     assert g.nibp_map.notna().sum() == raw.nibp_map.ne(raw.nibp_map.shift()).sum()
     np.testing.assert_allclose(g.rftn_ug_h, np.r_[20 * raw.rftn_rate[: N // 2], 50 * raw.rftn50_rate[N // 2 :]])

@@ -220,12 +220,17 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `phases_min` | `{anestart, opstart, opend, aneend}` min (null if missing) |
 | `t_min` | `[n]` min. 10 s bins `(t − 10 s, t]`, each holding the last finite 2 s value (raw grid, before artifact cleaning) |
 | `series` | `{map, nibp_map, spo2, hr, etco2, bis, ppf_rate, rftn_ug_h}`, each `[n]` aligned with `t_min`, `null` where the bin has no data. Units: mmHg, mmHg, %, bpm, mmHg, BIS 0–100, mL/h (propofol 20 mg/mL), µg/h (remifentanil, both pumps: 20 × `rftn_rate` + 50 × `rftn50_rate`, as in `clean.py`) |
-| `split` *(labels.py)* | `"train" | "val" | "test"`, from `processed/splits.json`. The page labels risk traces from train cases as out-of-fold |
+| `split` *(labels.py)* | `"train" | "val" | "test"`, from `processed/splits.json`. The page says what the split means for the risk traces (see below) |
 | `events` *(labels.py)* | `[{type, onset_min, end_min}]` from `processed/events.parquet` (`end_min` = last grid time of the run). Present only for labelled cases (`processed/grid/{id}.parquet` exists); `[]` means labelled with no events |
 | `risk` *(later, fusion/explain.py)* | `{event: {t_min: [m], p5: [m], p10: [m], p15: [m], threshold: float}}` on the 30 s prediction grid, `null` at dropped times |
 | `alerts` *(later, explain.py)* | `[{type, t_min, p10, lead_specialist, top_drivers: [str, str, str]}]`: fired alerts (after the 5 min refractory period) with the plain-language drivers from that record |
 
-`export.py` adds `split` and `events` whenever the labels.py outputs exist. `risk` and `alerts` are for explain.py's records: when they exist, `export.py` must add them in this shape. The page already draws all four: shaded events, risk panels with the threshold, alert triangles and the driver list. Without them it says which command to run.
+`export.py` adds `split` and `events` whenever the labels.py outputs exist. `risk` and `alerts` are for explain.py's records: when they exist, `export.py` must add them in this shape, with these split rules:
+- **train**: only from a cross-fitted stacker, so every train surgery is scored by specialist *and* stacker folds that excluded its subject. If fusion.py fits one stacker on all of train, train surgeries get no `risk` or `alerts`.
+- **val**: allowed. The page notes that isotonic calibration and the alert threshold were fit on this split.
+- **test**: dropped by `export.py` until `evaluate.py --split test` has written its lock file, so no test-patient predictions are viewed before the locked run.
+
+The page already draws all four: shaded events, risk panels with the threshold, alert triangles and the driver list. Without them it says what is missing.
 
 ### `reports/web/metrics.json`: written by `evaluate.py` (`--split val|test`)
 ```

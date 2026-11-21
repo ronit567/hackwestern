@@ -246,6 +246,7 @@ The page already draws all four: shaded events, risk panels with the threshold, 
   "overall_excl_flagged": same shape, times flagged within 5 min after an event dropped,
   "bins":        {event: {H: [{label: "65-70", lo: 65, hi: 70, n, n_pos,
                                 models: {model: {auroc: [e, lo, hi], auprc: [e, lo, hi]}}}]}},
+  "bins_excl_flagged": same shape as bins, flagged times dropped (the page's checkbox switches headline and tables together),
   "subgroups":   {event: {H: {attr: [{label, n, n_pos, models: {model: {auroc, auprc}}}]}}},
   "reliability": {event: {H: {model: [{p, obs, n}]}}},            # mean predicted, observed rate, count per bin
   "ablation":    {event: {H: {model: "snapshot", with_drugs: {auroc, auprc}, without_drugs: {auroc, auprc}}}}

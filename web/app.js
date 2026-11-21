@@ -318,13 +318,23 @@ const legend = () => h("p", { class: "legend" },
   h("span", { class: "key key-final", "aria-hidden": "true" }), `${modelName(metrics.final_model)}  `,
   h("span", { class: "key key-base", "aria-hidden": "true" }), `${MODEL.baseline1}. Bars are 95 % confidence intervals from ${fmt(metrics.bootstrap)} patient bootstrap resamples.`);
 
+let exclFlagged = false;
+const flagged = (k) => metrics[exclFlagged ? `${k}_excl_flagged` : k];
+// one setting for the headline and the metrics tables: both redraw, and focus returns to the box that was used
+function flagBox(id) {
+  const box = h("input", { type: "checkbox", id, checked: exclFlagged || null });
+  box.onchange = () => { exclFlagged = box.checked; renderAll(); document.getElementById(id).focus(); };
+  return h("p", { class: "check" }, box, h("label", { for: id }, "Leave out times within 5 min after an event ended"));
+}
+
 function headline(W) {
-  if (!metrics.bins) return fill("headline", empty("Value-band results not computed.", RUN.evaluate));
-  const fm = metrics.final_model, H = HH(), out = [
+  const fm = metrics.final_model, H = HH(), byEv = flagged("bins"), out = [
     h("p", {}, `Discrimination ${H} minutes ahead, inside each band of the current value. Baseline 1 sees only the current number, which says little inside a narrow band. The model has to beat it in every band, including the bands where the number still looks normal.`),
-    legend()];
-  for (const ev of Object.keys(metrics.bins)) {
-    const bins = metrics.bins[ev][H] || [], all = metrics.overall?.[ev]?.[H] || {};
+    flagBox("excl-flagged-h")];
+  if (!byEv) return fill("headline", out, empty("Value-band results not computed.", RUN.evaluate));
+  out.push(legend());
+  for (const ev of Object.keys(byEv)) {
+    const bins = byEv[ev][H] || [], all = flagged("overall")?.[ev]?.[H] || {};
     const rows = (k) => [{ label: "All times", a: all[fm]?.[k], b: all.baseline1?.[k] },
       ...bins.map((b) => ({ label: binLabel(ev, b.label), sub: `${fmt(b.n_pos)} of ${fmt(b.n)} times before an onset`, a: b.models[fm]?.[k], b: b.models.baseline1?.[k] }))];
     const wins = bins.filter((b) => b.models[fm]?.auroc?.[0] > b.models.baseline1?.auroc?.[0]).length;
@@ -344,10 +354,9 @@ function headline(W) {
 
 const DISC = [["auroc", "AUROC"], ["auprc", "AUPRC"], ["brier", "Brier score", 3], ["sens_at_90spec", "Sensitivity at 90 % specificity, %", 0, true]];
 const cell = (m, d = 2, asPct) => h("td", {}, ciText(m, d, asPct ? (v) => fmt(v * 100) : undefined));
-let exclFlagged = false;
 
 function metricTables() {
-  const src = metrics[exclFlagged ? "overall_excl_flagged" : "overall"];
+  const src = flagged("overall");
   if (!src) return [empty("Not computed.", RUN.evaluate)];
   return Object.entries(src).map(([ev, byH]) => {
     const n = metrics.n?.[ev];
@@ -362,14 +371,11 @@ function metricTables() {
 }
 
 function metricsSection() {
-  const box = h("input", { type: "checkbox", id: "excl-flagged", checked: exclFlagged || null });
-  const tables = h("div", {}, metricTables());
-  box.onchange = () => { exclFlagged = box.checked; tables.replaceChildren(...metricTables()); };
   const ab = metrics.ablation || {};
   fill("metrics",
     h("p", {}, "Every eligible prediction time, every 30 s. Intervals are 95 % patient-bootstrap CIs. Brier score: lower is better."),
-    h("p", { class: "check" }, box, h("label", { for: "excl-flagged" }, "Leave out times within 5 min after an event ended")),
-    tables,
+    flagBox("excl-flagged"),
+    metricTables(),
     Object.keys(ab).length ? [
       h("h3", {}, "Drug-feature ablation"),
       h("p", { class: "note" }, "The same model trained with and without the infusion and anesthetic-agent features. Vasopressor infusions are rare in this cohort, so this mostly measures propofol and remifentanil."),

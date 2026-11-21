@@ -99,6 +99,7 @@ FILL = CFG["grid"]["ffill_max_s"] // STEP
 BEAT = ["beat_pp", "beat_dpdt", "beat_sys_area", "beat_hr", "beat_ppv", "beat_sbp_sd"]
 BEAT_STEPS = int(pd.Timedelta(BEAT_WIN).total_seconds()) // STEP + 1  # grid steps a beat window can reach back
 PLETH_LEVEL = 300 // STEP  # trailing 5 min of pleth amplitude = its "own level"
+PLETH_CV_MAX = 0.5  # ~95th pct of 30 s pleth CV; emergence motion runs above it, real desaturations stayed below
 SPO2_DROP = 3  # % below the last SpO2 read while the pleth was good
 
 
@@ -115,13 +116,16 @@ def map_artifact(m, sbp, dbp):
     return out
 
 
-def spo2_artifact(s, amp):
-    """SpO2 < spo2_min, or below the last good-pleth SpO2 while the pleth is poor (NaN or < 1/4 of its 5 min median):
-    a real desaturation shows on a working pleth, a fall that only appears once the pleth collapses is the probe."""
+def spo2_artifact(s, amp, cv):
+    """SpO2 < spo2_min, or below the last SpO2 read with a good pleth while the pleth is not good: a real
+    desaturation shows on a working pleth, a fall that appears once the pleth is lost or erratic is the probe.
+    Poor pleth = NaN, < 1/4 of its 5 min median (probe off) or CV > PLETH_CV_MAX (motion); good = not poor for FILL steps,
+    so a brief calm moment inside motion can't reset the reference to the artifactual value."""
     level = amp.rolling(PLETH_LEVEL, min_periods=PLETH_LEVEL // 5).median()
-    poor = amp.isna() | (amp < level / 4)
-    ref = s.where(~poor & (s >= A["spo2_min"])).ffill()
-    return ((s < A["spo2_min"]) | (poor & (s < ref - SPO2_DROP))).to_numpy()
+    poor = amp.isna() | (amp < level / 4) | (cv > PLETH_CV_MAX)
+    good = ~poor.rolling(FILL, min_periods=1).max().astype(bool)
+    ref = s.where(good & (s >= A["spo2_min"])).ffill()
+    return ((s < A["spo2_min"]) | (~good & (s < ref - SPO2_DROP))).to_numpy()
 
 
 def carry(flag, v):
@@ -134,7 +138,7 @@ def clean_case(raw):
     the rest stays NaN: whether a gap will last > 30 s is unknown at the time), masks, artifact flags for labels."""
     m, s = raw["map"].to_numpy(), raw.spo2.to_numpy()
     art_map = map_artifact(m, raw.sbp.to_numpy(), raw.dbp.to_numpy())
-    art_spo2 = spo2_artifact(raw.spo2, raw.pleth_amp)
+    art_spo2 = spo2_artifact(raw.spo2, raw.pleth_amp, raw.pleth_cv)
     x = raw.drop(columns=["t_sec", "nibp_map"])
     x.loc[art_map, ["map", "sbp", "dbp"]] = np.nan
     x.loc[pd.Series(art_map).rolling(BEAT_STEPS, min_periods=1).max().astype(bool), BEAT] = np.nan  # 12 s beat stats

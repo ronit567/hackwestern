@@ -25,7 +25,7 @@ def raw_case():
     d["map"] = 80 + rng.normal(0, 3, N)
     d["sbp"], d["dbp"] = d["map"] + 35, d["map"] - 20
     d["spo2"] = np.round(98 + rng.normal(0, 0.5, N))
-    d["pleth_amp"] = 20 + rng.normal(0, 2, N)
+    d["pleth_amp"], d["pleth_cv"] = 20 + rng.normal(0, 2, N), 0.1
     d["nibp_map"] = np.repeat(rng.normal(80, 8, N // 150 + 1), 150)[:N]  # cuff value re-sent every 2 s
     d.loc[rng.random(N) < 0.3, ["fio2", "tv", "peep"]] = np.nan  # ventilator ~7 s cadence
     d.loc[d.index[:N // 2], "rftn50_rate"] = np.nan
@@ -39,7 +39,9 @@ def raw_case():
         d.loc[i : i + 5, "sbp"] = d.loc[i : i + 5, "map"] + 3
         d.loc[i : i + 5, "dbp"] = d.loc[i : i + 5, "map"] - 3
     d.loc[d.index[steps(60, 61)], "map"] = -495.0  # raw ADC 0
-    d.loc[d.index[steps(130, 134)], "pleth_amp"] = np.nan  # probe off: pleth lost, SpO2 reads low for 3.8 min
+    d.loc[d.index[steps(130, 134)], ["pleth_amp", "pleth_cv"]] = np.nan  # probe off: pleth lost, SpO2 low 3.8 min
+    d.loc[d.index[steps(140, 144)], "pleth_cv"] = 0.9  # motion: pleth erratic, SpO2 steps down for 3.5 min
+    d.loc[d.index[steps(140.5, 144)], "spo2"] = 86.0
     d.loc[d.index[steps(130.2, 134)], "spo2"] = 80.0
     d.loc[d.index[steps(40, 43)], "map"] = 55.0  # real hypotension with three below-threshold artifact points
     d.loc[[steps(41, 41).start + k for k in (0, 10, 20)], "map"] = 5.0
@@ -67,7 +69,8 @@ def test_clean_case_rules():
     assert g.art_map[i : i + 6].all() and not g.art_map[i + 6]  # whole flush flagged, recovery sample kept
     assert (g["map"][i : i + 6] == raw["map"][i - 1]).all()  # bridged by the last valid MAP
     assert (g[BEAT][i : i + 6 + 6] == raw[BEAT].iloc[i - 1]).all().all()  # artifact beats replaced, 12 s window
-    assert g.art_spo2[steps(130.2, 134)].all() and not g.art_spo2[steps(120, 130)].any()
+    assert g.art_spo2[steps(130.2, 134)].all() and g.art_spo2[steps(140.5, 144)].all()
+    assert not g.art_spo2[steps(100, 130)].any()  # includes the real hypoxemia at 110-113 min
     # ffill: the first FILL steps of a gap are filled, the rest stay NaN and are masked
     gap = steps(20, 21.5)
     assert g["map"][gap][:FILL].notna().all() and g["map"][gap][FILL:].isna().all()
@@ -93,7 +96,7 @@ def test_event_conventions_and_artifact_runs():
     assert hypo.onset_sec.tolist() == [40 * 60, 80 * 60]
     assert hypo.duration_s.tolist() == [180, 60] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
     assert hypo.artifact_frac.tolist() == [3 / 90, 0]
-    assert ev[ev.event == "hypoxemia"].onset_sec.tolist() == [110 * 60]  # probe-off at 130 min is not an event
+    assert ev[ev.event == "hypoxemia"].onset_sec.tolist() == [110 * 60]  # probe-off at 130 min and motion at 140 min are not events
 
 
 def test_nibp_never_changes_hypotension():

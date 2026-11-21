@@ -319,10 +319,11 @@ const legend = () => h("p", { class: "legend" },
   h("span", { class: "key key-base", "aria-hidden": "true" }), `${MODEL.baseline1}. Bars are 95 % confidence intervals from ${fmt(metrics.bootstrap)} patient bootstrap resamples.`);
 
 function headline(W) {
+  if (!metrics.bins) return fill("headline", empty("Value-band results not computed.", RUN.evaluate));
   const fm = metrics.final_model, H = HH(), out = [
     h("p", {}, `Discrimination ${H} minutes ahead, inside each band of the current value. Baseline 1 sees only the current number, which says little inside a narrow band. The model has to beat it in every band, including the bands where the number still looks normal.`),
     legend()];
-  for (const ev of Object.keys(metrics.bins || {})) {
+  for (const ev of Object.keys(metrics.bins)) {
     const bins = metrics.bins[ev][H] || [], all = metrics.overall?.[ev]?.[H] || {};
     const rows = (k) => [{ label: "All times", a: all[fm]?.[k], b: all.baseline1?.[k] },
       ...bins.map((b) => ({ label: binLabel(ev, b.label), sub: `${fmt(b.n_pos)} of ${fmt(b.n)} times before an onset`, a: b.models[fm]?.[k], b: b.models.baseline1?.[k] }))];
@@ -346,7 +347,8 @@ const cell = (m, d = 2, asPct) => h("td", {}, ciText(m, d, asPct ? (v) => fmt(v 
 let exclFlagged = false;
 
 function metricTables() {
-  const src = metrics[exclFlagged ? "overall_excl_flagged" : "overall"] || {};
+  const src = metrics[exclFlagged ? "overall_excl_flagged" : "overall"];
+  if (!src) return [empty("Not computed.", RUN.evaluate)];
   return Object.entries(src).map(([ev, byH]) => {
     const n = metrics.n?.[ev];
     return h("div", { class: "scroll" }, h("table", { class: "metrics" },

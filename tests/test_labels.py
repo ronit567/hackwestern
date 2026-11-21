@@ -73,6 +73,7 @@ def raw_case():
     d.loc[d.index[steps(146, 146 + 40 / 60)], "map"] = 60.0  # 40 s below threshold, then a 60 s dropout: no event
     d.loc[d.index[steps(146 + 40 / 60, 147 + 40 / 60)], ["map", "sbp", "dbp"]] = np.nan
     d.loc[d.index[steps(150, 158)], ["map", "sbp", "dbp"]] = np.nan  # 8 min without MAP
+    d.loc[steps(158, 158).start, "map"] = 250.0  # and it resumes on a flush sample
     k = steps(95, 96.5)  # blood draw: MAP decays 80 -> 40 (< 40 per step), sent without SBP/DBP, no ART beats
     d.loc[d.index[k], "map"] = 40 + 40 * np.exp(-np.arange(k.stop - k.start) / 8)
     d.loc[d.index[k], ["sbp", "dbp"] + BEAT] = np.nan
@@ -82,9 +83,11 @@ def raw_case():
 def test_clean_case_truncation():
     raw = raw_case()
     full = clean_case(raw)
-    for T in [0, 2, 598, 1802, 2700, 2710, 6000, 7202, 7840, 7900, (N - 1) * STEP]:
-        k = T // STEP + 1
-        pd.testing.assert_frame_equal(full.iloc[:k], clean_case(raw.iloc[:k]))
+    x = full[[c for c in full if c.startswith("art_") or c.endswith("_missing")] + ["nibp_map"]].astype(float).fillna(-1)
+    edge = np.flatnonzero((x != x.shift()).any(axis=1))  # every row where a flag, mask or cuff reading changes
+    ks = {k + d for k in edge for d in (0, 1, 2)} | {0, 299, 901, 3600, N - 1}
+    for k in sorted(k for k in ks if k < N):  # truncate right after grid row k
+        pd.testing.assert_frame_equal(full.iloc[: k + 1], clean_case(raw.iloc[: k + 1]))
 
 
 def test_clean_case_rules():

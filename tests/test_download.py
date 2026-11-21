@@ -1,4 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
+import pandas as pd
 from scipy.signal import find_peaks
 
 import orew.download as d
@@ -103,3 +106,13 @@ def test_attempt_waits_between_retries(monkeypatch):
     monkeypatch.setattr(d, "process", lambda c: 1 / 0)
     waits.clear()
     assert "ZeroDivisionError" in d.attempt(1)[0] and waits == [10, 30]  # no wait after the last try
+
+
+def test_failed_csv_keeps_failures_not_retried(monkeypatch, tmp_path):
+    monkeypatch.setattr(d, "RAW", tmp_path)
+    monkeypatch.setattr(d, "ProcessPoolExecutor", ThreadPoolExecutor)
+    monkeypatch.setattr(d, "attempt", lambda c: ("new", 0, 0))
+    (tmp_path / "0001.parquet").touch()
+    (tmp_path / "failed.csv").write_text("caseid,error\n1,old\n2,old\n4444,old\n")
+    d.run([1, 2])  # 1 is now cached, 2 is retried and fails again, 4444 is not in this run
+    assert pd.read_csv(tmp_path / "failed.csv").values.tolist() == [[4444, "old"], [2, "new"]]

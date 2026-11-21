@@ -116,8 +116,11 @@ def run(ids):
             print(f"[{i}/{len(todo)}] {c}: {err or 'ok'} {sec:.0f}s, worker peak RSS {rss:.0f} MB", flush=True)
             if err:
                 fails.append((c, err))
-    pd.DataFrame(fails, columns=["caseid", "error"]).to_csv(RAW / "failed.csv", index=False)
-    print(f"{len(fails)} failed -> {RAW / 'failed.csv'}")
+    f = RAW / "failed.csv"
+    # ids in this run are now cached or re-logged below; earlier failures outside it still have no parquet
+    old = pd.read_csv(f).query("caseid not in @ids") if f.exists() else None
+    pd.concat([old, pd.DataFrame(fails, columns=["caseid", "error"])]).to_csv(f, index=False)
+    print(f"{len(fails)} failed -> {f}")
 
 
 def check(ids):

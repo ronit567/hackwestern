@@ -11,7 +11,7 @@ from orew import RAW, REPORTS
 
 OUT = REPORTS / "web"
 STEP = 10  # s, case-explorer resolution
-SERIES = ["map", "nibp_map", "spo2", "hr", "etco2", "bis", "ppf_rate", "rftn_rate"]
+SERIES = ["map", "nibp_map", "spo2", "hr", "etco2", "bis", "ppf_rate", "rftn_ug_h"]
 PHASES = ["anestart", "opstart", "opend", "aneend"]
 DEMO = ["age", "sex", "height", "weight", "bmi", "asa", "emop", "department", "optype", "opname"]
 
@@ -30,7 +30,13 @@ def dump(obj, path):
     path.write_text(json.dumps(obj, allow_nan=False, separators=(",", ":")))
 
 
+def rftn_ug_h(df):
+    """Both remifentanil pumps in ug/h, as clean.py does (20 and 50 ug/mL); older caches lack rftn50_rate."""
+    return (20 * df.rftn_rate).add(50 * df.get("rftn50_rate", pd.Series(dtype=float)), fill_value=0)
+
+
 def case_json(df, row):
+    df = df.assign(rftn_ug_h=rftn_ug_h(df))
     g = df.groupby(-(-df.t_sec // STEP) * STEP)[SERIES].last()  # last finite value in (t - 10, t], like the 2 s grid
     t0 = row.casestart
     return {

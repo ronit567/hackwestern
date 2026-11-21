@@ -14,7 +14,7 @@ const SIGNALS = {
   map: "Arterial MAP", sbp: "Arterial systolic", dbp: "Arterial diastolic", nibp_map: "Cuff MAP (NIBP)",
   hr: "Heart rate", spo2: "SpO2", etco2: "End-tidal CO2", rr: "Respiratory rate", fio2: "FiO2",
   tv: "Tidal volume", peep: "PEEP", pip: "Peak airway pressure", sevo: "Sevoflurane", des: "Desflurane",
-  mac: "MAC", ppf_rate: "Propofol infusion", rftn_rate: "Remifentanil infusion", rftn50_rate: "Remifentanil infusion, 50 µg/mL",
+  mac: "MAC", ppf_rate: "Propofol infusion", rftn_rate: "Remifentanil infusion", rftn50_rate: "Remifentanil infusion, 50 µg/mL", rftn_ug_h: "Remifentanil infusion",
   phen_rate: "Phenylephrine infusion", nepi_rate: "Norepinephrine infusion", bis: "BIS",
   bt: "Body temperature", beat_pp: "Pulse pressure, per beat", beat_dpdt: "Max dP/dt, per beat",
   beat_sys_area: "Systolic area, per beat", beat_hr: "Beat rate from arterial line",
@@ -117,7 +117,7 @@ const PANELS = [
   { key: "etco2", label: "End-tidal CO2, mmHg", unit: "mmHg", clamp: [0, 100], h: 80 },
   { key: "bis", label: "BIS", unit: "", clamp: [0, 100], h: 80 },
   { key: "ppf_rate", label: "Propofol infusion, mL/h", unit: "mL/h", clamp: [0, 1000], h: 60, cls: "drug", zero: true },
-  { key: "rftn_rate", label: "Remifentanil infusion, mL/h", unit: "mL/h", clamp: [0, 1000], h: 60, cls: "drug", zero: true },
+  { key: "rftn_ug_h", label: "Remifentanil infusion, µg/h", unit: "µg/h", clamp: [0, 50000], h: 60, cls: "drug", zero: true },
 ];
 const PHASES = [["Induction", "anestart", "opstart"], ["Surgery", "opstart", "opend"], ["Emergence", "opend", "aneend"]];
 const RISK_H = 80;

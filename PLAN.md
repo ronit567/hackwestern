@@ -193,6 +193,7 @@ A static page (`web/index.html`, `app.js`, `style.css`: vanilla JS, hand-written
 uv run python -m orew.export                                   # cohort.json + cases/ (--max-cases, default 50)
 uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http://localhost:8000/web/
 ```
+`?theme=light` or `?theme=dark` overrides the system colour scheme (projectors, screenshots). The page computes nothing itself except one count: in how many value bands the final model's AUROC point estimate beats baseline 1's. `uv run pytest tests/test_export.py` checks the JSON and that `web/app.js` parses (`node --check`).
 
 **Conventions:** JSON written with `allow_nan=False` (missing = `null`). Times are **minutes from `casestart`**. Probabilities and rates are fractions 0–1 (the page shows %). Every metric is `[estimate, ci_low, ci_high]` (95 % CI, patient bootstrap) or `null` if not computed. Object keys for horizons are strings: `"5"`, `"10"`, `"15"`. Events are `"hypotension"` and `"hypoxemia"`. Models are `baseline1, baseline2, snapshot, trajectory, pattern, fusion`.
 
@@ -205,11 +206,11 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `emergency` | `{n, of}` (`emop == 1`) | ″ |
 | `median_duration_min` | float, `caseend − casestart` | ″ |
 | `signals` | `[{name, pct_time, pct_cases}]`: % of 2 s grid rows with data (mean over cases) and % of cases with any data, for each parquet column | cached parquets |
-| `events` *(later)* | `{event: {n_events, n_cases}}` | `labels.py` output |
-| `splits` *(later)* | `{train|val|test: {n_subjects, n_cases}}` | `processed/splits.json` |
+| `events` *(once labels.py has run)* | `{event: {n_events, n_cases}}` over labelled cases | `processed/events.parquet` |
+| `splits` *(once labels.py has run)* | `{train|val|test: {n_subjects, n_cases}}` over the whole cohort | `processed/splits.json` |
 
 ### `reports/web/cases/index.json` + `cases/{caseid}.json`: `export.py`
-- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for the first `--max-cases` cached cases, in cohort order. Later it also gets `split`.
+- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for the first `--max-cases` cached cases, in cohort order, plus `split` (`null` until labels.py has run).
 - `{caseid}.json`:
 
 | Field | Shape / unit |
@@ -218,13 +219,13 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `demographics` | the same clinical fields as an index entry |
 | `phases_min` | `{anestart, opstart, opend, aneend}` min (null if missing) |
 | `t_min` | `[n]` min. 10 s bins `(t − 10 s, t]`, each holding the last finite 2 s value (raw grid, before artifact cleaning) |
-| `series` | `{map, nibp_map, spo2, hr, etco2, bis, ppf_rate, rftn_rate}`, each `[n]` aligned with `t_min`, `null` where the bin has no data. Units: mmHg, mmHg, %, bpm, mmHg, BIS 0–100, mL/h, mL/h |
-| `split` *(later, labels.py)* | `"train" | "val" | "test"`. The page labels risk traces from train cases as out-of-fold |
-| `events` *(later, labels.py)* | `[{type, onset_min, end_min}]` |
+| `series` | `{map, nibp_map, spo2, hr, etco2, bis, ppf_rate, rftn_ug_h}`, each `[n]` aligned with `t_min`, `null` where the bin has no data. Units: mmHg, mmHg, %, bpm, mmHg, BIS 0–100, mL/h (propofol 20 mg/mL), µg/h (remifentanil, both pumps: 20 × `rftn_rate` + 50 × `rftn50_rate`, as in `clean.py`) |
+| `split` *(labels.py)* | `"train" | "val" | "test"`, from `processed/splits.json`. The page labels risk traces from train cases as out-of-fold |
+| `events` *(labels.py)* | `[{type, onset_min, end_min}]` from `processed/events.parquet` (`end_min` = last grid time of the run). Present only for labelled cases (`processed/grid/{id}.parquet` exists); `[]` means labelled with no events |
 | `risk` *(later, fusion/explain.py)* | `{event: {t_min: [m], p5: [m], p10: [m], p15: [m], threshold: float}}` on the 30 s prediction grid, `null` at dropped times |
 | `alerts` *(later, explain.py)* | `[{type, t_min, p10, lead_specialist, top_drivers: [str, str, str]}]`: fired alerts (after the 5 min refractory period) with the plain-language drivers from that record |
 
-When those stage outputs exist, `export.py` adds the *(later)* fields. The page already draws them if present: shaded events, risk panels with the threshold, alert ticks and drivers.
+`export.py` adds `split` and `events` whenever the labels.py outputs exist. `risk` and `alerts` are for explain.py's records: when they exist, `export.py` must add them in this shape. The page already draws all four: shaded events, risk panels with the threshold, alert triangles and the driver list. Without them it says which command to run.
 
 ### `reports/web/metrics.json`: written by `evaluate.py` (`--split val|test`)
 ```

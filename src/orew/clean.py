@@ -1,7 +1,7 @@
 """Causal 2 s grid features. Grid time g holds only data with timestamp in (g - STEP, g]."""
 import numpy as np
 import pandas as pd
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, peak_prominences
 
 from orew import CFG
 
@@ -10,8 +10,10 @@ FS = CFG["grid"]["wave_hz_native"]
 DEC = FS // CFG["grid"]["wave_hz_model"]
 BIN = FS * STEP  # wave samples per grid bin
 
-PROM = 10.0  # mmHg; systolic peaks clear this, dicrotic waves (peak minus notch) do not
+PROM = 10.0  # mmHg; candidate peaks need this prominence (rejects noise and quantisation steps)
 WLEN = int(1.5 * FS) + 1  # odd: scipy searches prominence bases in [p - WLEN//2, p + WLEN//2]
+# a beat peak is the highest candidate within +-REFR, which drops diastolic waves (~0.3 s after systole)
+REFR = int(0.35 * FS)  # shortcut: caps detectable HR at ~170 bpm, make adaptive if tachycardia matters
 BEAT_WIN = "12s"  # trailing window for breath-to-breath PP swing and SBP variability
 PLETH_WIN = 30 // STEP  # trailing grid bins for pleth amplitude CV
 
@@ -36,9 +38,14 @@ def to_grid(idx, df, n):
 
 def beats(x):
     """Per-beat ART features, beat = foot to next foot, stamped with available_at (sample index)."""
-    p, d = find_peaks(x, prominence=PROM, wlen=WLEN, plateau_size=1)
-    # a peak is known once its prominence window and the end of its plateau have been seen
-    known = np.maximum(p + WLEN // 2, d["right_edges"] + 1)
+    q, d = find_peaks(x, plateau_size=1)
+    # a local max is settled once its plateau has ended and its prominence window has been seen
+    settled = np.maximum(q + WLEN // 2, d["right_edges"] + 1)  # non-decreasing in q
+    c = q[peak_prominences(x, q, wlen=WLEN)[0] >= PROM]
+    lo, hi = np.searchsorted(c, c - REFR), np.searchsorted(c, c + REFR, "right")
+    p = c[[lo[i] + np.argmax(x[c[lo[i] : hi[i]]]) == i for i in range(len(c))]]  # ties: earliest wins
+    # p is final once every local max up to p + REFR is settled
+    known = np.maximum(p + REFR + 1, settled[np.searchsorted(q, p + REFR, "right") - 1])
     feet = np.array([a + np.argmin(x[a:b]) for a, b in zip(p[:-1], p[1:])], dtype=int)
     nan_cum = np.r_[0, np.cumsum(np.isnan(x))]
     rows = []

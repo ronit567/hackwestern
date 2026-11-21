@@ -10,13 +10,15 @@ t = np.arange(DUR * FS) / FS
 
 
 def art_wave():
-    """ART-like wave: harmonics, drifting HR, respiratory PP swing, pressure drop, noise, a gap and clipping."""
+    """ART-like wave: harmonics, drifting HR, respiratory PP swing, pressure drop, noise, gap, clipping, double peaks."""
     ph = 2 * np.pi * np.cumsum(1.25 + 0.1 * np.sin(2 * np.pi * t / 120)) / FS
     pp = 20 * (1 + 0.15 * np.sin(2 * np.pi * 0.25 * t))
     mean = 90 - 30 / (1 + np.exp(-(t - 150) / 10))
     x = mean + pp * (np.sin(ph) + 0.3 * np.sin(2 * ph + 1) + 0.1 * np.sin(3 * ph + 2)) + rng.normal(0, 0.5, t.size)
     x[100 * FS : 103 * FS] = np.nan
     x[200 * FS : 202 * FS] = np.minimum(x[200 * FS : 202 * FS], 85)  # flat-topped beats -> plateaus
+    late = (t > 240) & (t < 270)  # double-peaked beats whose later peak is higher
+    x[late] += 30 * np.exp(-(((ph[late] % (2 * np.pi)) - 2.9) ** 2) / 0.05)
     return x.astype(np.float32)
 
 
@@ -33,7 +35,7 @@ def test_beat_grid_truncation():
     full, full_beats = beat_grid(x, n_grid(DUR)).to_numpy(), beats(x)
     # also cut just after peaks, where a hidden look-ahead would show up
     peaks = find_peaks(x, prominence=10)[0][::15]
-    for T in TS + [(p + d) / FS for p in peaks for d in (1, 50, 200, 330, 374, 375, 376)]:
+    for T in TS + [(p + d) / FS for p in peaks for d in (1, 100, 176, 375, 500, 549, 550, 551, 700)]:
         xt = cut(x, T)
         np.testing.assert_array_equal(full[: n_grid(T)], beat_grid(xt, n_grid(T)).to_numpy())
         b = beats(xt)

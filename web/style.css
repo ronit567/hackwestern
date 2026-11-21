@@ -1,0 +1,80 @@
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#f8fafb, #121a21);
+  --panel: light-dark(#ffffff, #18232c);
+  --ink: light-dark(#17212b, #e3eaf0);
+  --muted: light-dark(#536273, #9aa9b7);
+  --rule: light-dark(#d5dee5, #2b3844);
+  --grid: light-dark(#e7edf1, #1f2b35);
+  --grid-major: light-dark(#cfd9e0, #2f3e4b);
+  --focus: light-dark(#0b5cad, #7cb8ff);
+  /* signal colours follow OR monitor convention: arterial red, pleth cyan, ECG green, CO2 yellow */
+  --map: light-dark(#c62828, #ff7a7a);
+  --spo2: light-dark(#0277a8, #4fc3f7);
+  --hr: light-dark(#2e7d32, #6ccb70);
+  --etco2: light-dark(#8a6d00, #e2be3c);
+  --bis: light-dark(#6a4fb3, #b9a2f0);
+  --drug: light-dark(#6a4fb3, #b9a2f0);
+  --risk: light-dark(#17212b, #e3eaf0);
+  --baseline: light-dark(#7a8794, #8796a4);
+  --ev-hypotension: light-dark(#c6282822, #ff7a7a2e);
+  --ev-hypoxemia: light-dark(#0277a822, #4fc3f72e);
+  --font: "Avenir Next", Avenir, Seravek, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-num: "Avenir Next Condensed", "Avenir Next", "Roboto Condensed", "Arial Narrow", var(--font);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1rem/1.5 var(--font);
+  font-variant-numeric: tabular-nums;
+}
+header, main { max-width: 72rem; margin: 0 auto; padding: 0 16px; }
+header { padding-top: 2.5rem; }
+h1 { font-size: 1.75rem; line-height: 1.2; font-weight: 600; margin: 0 0 .75rem; }
+h2 { font-size: 1.25rem; line-height: 1.3; font-weight: 600; margin: 0 0 1rem; }
+h3 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 .5rem; }
+p { margin: 0 0 1rem; max-width: 70ch; }
+.lead { font-size: 1.0625rem; color: var(--ink); }
+.status { color: var(--muted); font-size: .9375rem; }
+code { font-family: ui-monospace, Menlo, monospace; font-size: .875em; background: var(--grid); padding: .1em .35em; border-radius: 3px; overflow-wrap: anywhere; }
+
+nav { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; padding: .75rem 0; border-bottom: 1px solid var(--rule); }
+nav a { color: var(--muted); text-decoration: none; font-size: .9375rem; padding: .25rem 0; }
+nav a:hover { color: var(--ink); text-decoration: underline; }
+
+section { padding: 2.5rem 0 1rem; border-bottom: 1px solid var(--rule); scroll-margin-top: 1rem; }
+section:last-child { border-bottom: 0; padding-bottom: 4rem; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.empty { color: var(--muted); border-left: 3px solid var(--rule); padding: .25rem 0 .25rem .75rem; }
+.note { color: var(--muted); font-size: .875rem; }
+
+/* visually hidden but read by screen readers */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; font-size: .9375rem; }
+th, td { text-align: right; padding: .35rem .75rem; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+thead th { font-weight: 600; color: var(--muted); border-bottom-color: var(--rule); vertical-align: bottom; }
+tbody th { font-weight: 400; }
+.ci { color: var(--muted); font-size: .8125rem; margin-left: .35rem; }
+
+select, input { font: inherit; color: inherit; }
+select { background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: .35rem .5rem; max-width: 100%; }
+label { color: var(--muted); font-size: .9375rem; }
+
+svg { display: block; overflow: visible; }
+svg text { fill: var(--muted); font: 400 12px var(--font); }
+svg .title { fill: var(--ink); font-weight: 600; font-size: 13px; }
+svg .grid { stroke: var(--grid); }
+svg .grid-major { stroke: var(--grid-major); }
+svg .thr { stroke: var(--ink); stroke-dasharray: 4 3; opacity: .7; }
+svg .phase { stroke: var(--muted); stroke-dasharray: 2 3; }
+svg .line { fill: none; stroke-width: 1.5; stroke-linejoin: round; }

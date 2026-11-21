@@ -297,9 +297,9 @@ function dumbbell(title, rows, W, ciPair) {
         s("circle", { cx: x(m[0]), cy: y + dy, r: 4.5 })));
     }
   });
-  const table = h("table", { class: "vh" }, h("caption", {}, title),
+  const table = h("div", { class: "vh" }, h("table", {}, h("caption", {}, title),
     h("tr", {}, h("th", {}, "Group"), h("th", {}, ciPair[0]), h("th", {}, ciPair[1])),
-    rows.map((r) => h("tr", {}, h("th", {}, `${r.label} ${r.sub || ""}`), h("td", {}, ciText(r.a, 3)), h("td", {}, ciText(r.b, 3)))));
+    rows.map((r) => h("tr", {}, h("th", {}, `${r.label} ${r.sub || ""}`), h("td", {}, ciText(r.a, 3)), h("td", {}, ciText(r.b, 3))))));
   return h("figure", { class: "dumbbell" }, s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" }, g), table);
 }
 
@@ -381,8 +381,8 @@ function reliability(title, sub, pts, D, size) {
     s("title", {}, `Predicted ${pct(p.p, 1)}, observed ${pct(p.obs, 1)}, ${fmt(p.n)} times`)));
   return h("figure", { class: "rel" }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
     s("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" }, g),
-    h("table", { class: "vh" }, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
-      pts.map((p) => h("tr", {}, h("td", {}, pct(p.p, 1)), h("td", {}, pct(p.obs, 1)), h("td", {}, fmt(p.n))))));
+    h("div", { class: "vh" }, h("table", {}, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
+      pts.map((p) => h("tr", {}, h("td", {}, pct(p.p, 1)), h("td", {}, pct(p.obs, 1)), h("td", {}, fmt(p.n)))))));
 }
 
 function calibration(W) {

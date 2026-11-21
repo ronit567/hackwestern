@@ -126,6 +126,7 @@ def test_evaluate_end_to_end_contract_and_json():
     assert M["ablation"]["hypotension"]["10"]["model"] == "snapshot"
     assert M["n"]["hypotension"]["subjects"] == 12
     assert "## Value bins" in md and "| baseline1 |" in md  # leakage #13
+    assert "in-sample" in md  # val fusion is isotonic-fitted on val
 
 
 def test_saved_report_has_bin_tables_with_baseline1():

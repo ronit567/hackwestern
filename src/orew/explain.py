@@ -142,7 +142,8 @@ def records(split, processed=PROCESSED):
     cols = sorted({c for b in boosters.values() for c in b.feature_names})
     feat = pd.read_parquet(processed / "features.parquet", columns=["caseid", "t_sec", *cols],
                            filters=[("caseid", "in", preds.caseid.unique().tolist())])
-    feat = preds[["caseid", "t_sec"]].merge(feat, on=["caseid", "t_sec"], how="left", validate="1:1")
+    feat = preds[["caseid", "t_sec"]].merge(feat, on=["caseid", "t_sec"], how="inner", validate="1:1")
+    assert len(feat) == len(preds), "prediction rows without a features row: re-run orew.features and orew.models"
 
     out = {}
     t0 = time.perf_counter()

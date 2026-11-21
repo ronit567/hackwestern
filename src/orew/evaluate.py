@@ -245,6 +245,9 @@ def evaluate(df, val, events, cases, thr_json, B, split):
             for k, v in out.items():
                 res[k][e][str(h)] = v
     t_disc = time.time() - t0
+    if split == "val" and final == "fusion":
+        notes.append("fusion is isotonic-calibrated on this split, so its val AUROC, AUPRC, Brier and reliability are "
+                     "in-sample (optimistic, most of all inside the value bins); the final numbers are the test run.")
 
     thr = {e: {} for e in EVENTS}
     alert_log = {}
@@ -363,6 +366,8 @@ def main():
             sys.exit(f"{LOCK} exists: the single locked test run has already happened.")
         if subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=ROOT).returncode:
             sys.exit("pytest failed: refusing to evaluate on test.")
+    if (PROCESSED / "events.parquet").stat().st_mtime > (PROCESSED / f"preds_{split}.parquet").stat().st_mtime:
+        sys.exit("events.parquet is newer than the predictions: re-run orew.features and orew.models")
     df = pd.read_parquet(PROCESSED / f"preds_{split}.parquet")
     if not (df.split == split).all():
         sys.exit(f"preds_{split}.parquet holds rows from other splits")

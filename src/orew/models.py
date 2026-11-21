@@ -58,6 +58,13 @@ def logit(p):
     return np.log(p / (1 - p))
 
 
+def calibrate(x, y):
+    """Isotonic, capped at its value at the top 0.1 % of scores: a few-row pure-positive top block read 1.0 on val and
+    was only 55-68 % positive out of sample."""
+    iso = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip").fit(x, y)
+    return IsotonicRegression(y_min=0, y_max=iso.predict([np.quantile(x, 0.999)])[0], out_of_bounds="clip").fit(x, y)
+
+
 def run(df, folds, feats, drugs, splits=("val",)):
     """df = pred_table joined with features. Fits on split == train only. Returns ({train|val|test: preds frame}, saved
     models, thresholds). The train frame holds OOF predictions (fold models never saw the row's subject)."""
@@ -102,7 +109,7 @@ def run(df, folds, feats, drugs, splits=("val",)):
                     raw[s] = stk.predict_proba(X[s][cols])[:, 1]
                 # isotonic is fit on VAL (spec), so val metrics of the calibrated fusion are calibration-in-sample; test is clean
                 lab = X["val"][y].notna().to_numpy()
-                iso = IsotonicRegression(y_min=0, y_max=1, out_of_bounds="clip").fit(raw["val"][lab], X["val"][y][lab])
+                iso = calibrate(raw["val"][lab], X["val"][y][lab])
                 for s in out:
                     P[s][m] = iso.predict(raw[s])
                 keep[m], keep[f"iso_{m}"] = stk, iso
@@ -125,6 +132,10 @@ def run(df, folds, feats, drugs, splits=("val",)):
         for c in [f"p_{m}_{e}_{h}" for m in MODELS for e in EVENTS for h in HORIZONS]:
             out[s][c] = out[s].get(c, np.nan)
             out[s][c] = out[s][c].astype(float)
+        for m in ("fusion", "fusion_nodrug"):  # y_5 within y_10 within y_15, but per-horizon models can invert: p5 > p15
+            for e in EVENTS:
+                c = [f"p_{m}_{e}_{h}" for h in HORIZONS]
+                out[s][c] = np.fmax.accumulate(out[s][c].to_numpy(), axis=1)
     thr = {e: {"threshold": choose_threshold(out["val"], f"p_fusion_{e}_{HEAD}"),
                "alarms_per_hour_target": CFG["alerts"]["alarms_per_hour"], "chosen_on": "val"} for e in EVENTS}
     return out, saved, thr
@@ -139,10 +150,12 @@ def main(test=False):
         if subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=ROOT).returncode:
             sys.exit("refusing --test: pytest -q failed")
     t0 = time.time()
+    if (PROCESSED / "features.parquet").stat().st_mtime < (PROCESSED / "pred_table.parquet").stat().st_mtime:
+        sys.exit("pred_table.parquet is newer than features.parquet: re-run `python -m orew.features` first")
     pt = pd.read_parquet(PROCESSED / "pred_table.parquet")
     ft = pd.read_parquet(PROCESSED / "features.parquet", columns=["caseid", "t_sec", *[c for c in FEATURES if c not in pt]])
-    df = pt.merge(ft, on=["caseid", "t_sec"], how="left", validate="1:1")
-    assert len(df) == len(pt)
+    df = pt.merge(ft, on=["caseid", "t_sec"], how="inner", validate="1:1")
+    assert len(df) == len(pt), "pred_table rows without a features row: re-run `python -m orew.features`"
     folds = {int(k): v for k, v in json.loads((PROCESSED / "folds.json").read_text()).items()}
     print(f"{len(df)} rows, {len(FEATURES)} features ({len(DRUG_COLS)} drug), loaded in {time.time() - t0:.0f} s", flush=True)
     out, saved, thr = run(df, folds, FEATURES, DRUG_COLS, ("val", "test") if test else ("val",))

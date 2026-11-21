@@ -121,3 +121,24 @@ def test_threshold_chosen_on_val_only(fitted):
     assert thr2 == thr
     pd.testing.assert_frame_equal(out2["val"], out["val"])
 
+
+
+def test_fusion_risk_never_falls_with_horizon(fitted):
+    """y_5 is a subset of y_15, so p5 <= p10 <= p15 on every row."""
+    *_, (out, _, _) = fitted
+    for d in out.values():
+        for e in models.EVENTS:
+            for m in ("fusion", "fusion_nodrug"):
+                p = d.loc[d[f"eligible_{e}"], [f"p_{m}_{e}_{h}" for h in models.HORIZONS]].to_numpy()
+                assert (np.diff(p, axis=1) >= 0).all()
+
+
+def test_calibration_cap_ignores_a_tiny_pure_positive_top_block():
+    from sklearn.isotonic import IsotonicRegression
+    rng = np.random.default_rng(0)
+    x = rng.random(10_000)
+    y = (rng.random(10_000) < 0.3 * x).astype(int)
+    y[np.argsort(x)[-5:]] = 1  # top 0.05 % all positive
+    assert IsotonicRegression(y_min=0, y_max=1).fit(x, y).predict(x).max() == 1  # uncapped: reads 100 %
+    p = models.calibrate(x, y).predict(x)
+    assert p.max() < 0.6 and (np.diff(p[np.argsort(x)]) >= 0).all()

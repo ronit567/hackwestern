@@ -150,7 +150,7 @@ async function drawCase() {
   ].filter(Boolean).join(", ");
   const notes = [];
   if (!c.events) notes.push(empty("Events are not labelled yet.", "uv run python -m orew.labels && " + RUN.export));
-  if (!c.risk) notes.push(empty("No risk curves yet: they need the trained model.", "uv run python -m orew.explain && " + RUN.export));
+  if (!c.risk) notes.push(h("p", { class: "empty" }, "No risk curves yet. They appear once the model is trained and explain.py's records are exported."));
   else if (c.split === "train") notes.push(h("p", { class: "note" }, "This is a training surgery, so its risk curves are out-of-fold predictions."));
   const readout = h("p", { class: "readout", "aria-live": "polite" }, "Point at the chart, or focus it and use the arrow keys, to read values.");
   view.replaceChildren(

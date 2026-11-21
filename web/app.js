@@ -329,7 +329,9 @@ function dumbbell(title, rows, W, ciPair, isFake) {
 
 const legend = () => h("p", { class: "legend" },
   h("span", { class: "key key-final", "aria-hidden": "true" }), `${modelName(metrics.final_model)}  `,
-  h("span", { class: "key key-base", "aria-hidden": "true" }), `${MODEL.baseline1}. Bars are 95 % confidence intervals from ${fmt(metrics.bootstrap)} patient bootstrap resamples.`);
+  h("span", { class: "key key-base", "aria-hidden": "true" }), `${MODEL.baseline1}. Bars are 95 % confidence intervals${metrics.bootstrap ? ` from ${fmt(metrics.bootstrap)} patient bootstrap resamples` : ""}.`, illCI());
+// the made-up intervals come from a formula, so no line may call them bootstrap CIs
+const illCI = () => (ill ? h("span", { class: "ill-tag" }, " Hypoxemia intervals are made up, not bootstrapped.") : null);
 
 let illN = 0;
 // stripes and the label drawn inside the svg itself, so even a cropped screenshot of one chart carries them
@@ -416,7 +418,7 @@ function metricTables() {
 function metricsSection() {
   const ab = metrics.ablation || {};
   fill("metrics",
-    h("p", {}, "Every eligible prediction time, every 30 s. Intervals are 95 % patient-bootstrap CIs. Brier score: lower is better."),
+    h("p", {}, `Every eligible prediction time, every 30 s. Intervals are 95 % ${metrics.bootstrap ? "patient-bootstrap " : ""}CIs.`, illCI(), " Brier score: lower is better."),
     flagBox("excl-flagged"),
     metricTables(),
     Object.keys(ab).length ? [
@@ -523,7 +525,7 @@ function renderAll() {
 // hypoxemia blocks only; with no metrics.json, a skeleton carries just enough for the sections to draw them
 function useIllustrative() {
   realN = metrics?.n?.hypoxemia; realSplit = metrics?.split;
-  metrics ||= { final_model: ill.final_model, models: ill.models, headline_horizon_min: ill.headline_horizon_min, bootstrap: ill.bootstrap };
+  metrics ||= { final_model: ill.final_model, models: ill.models, headline_horizon_min: ill.headline_horizon_min };
   for (const k of BLOCKS) metrics[k] = { ...metrics[k], hypoxemia: ill[k] };
   metrics.alerts = { ...metrics.alerts, threshold: { ...metrics.alerts?.threshold, hypoxemia: ill.alert_threshold } };
 }

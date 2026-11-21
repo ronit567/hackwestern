@@ -142,7 +142,7 @@ def build():
         "note": NOTE,
         "event": "hypoxemia",
         "models": MODELS, "final_model": "fusion", "horizons_min": [int(H) for H in HS],
-        "headline_horizon_min": int(HEADLINE), "bootstrap": 1000,
+        "headline_horizon_min": int(HEADLINE),  # no "bootstrap": these intervals come from a formula
         "n": N,
         "alert_threshold": THRESHOLD,
         "overall": o, "overall_excl_flagged": oe,

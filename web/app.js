@@ -471,7 +471,7 @@ async function main() {
   else if (metrics)
     status.textContent = metrics.split === "test"
       ? "Results on the held-out test split, run once."
-      : "Results on the validation split. The test split has not been touched.";
+      : "Results on the validation split.";
   else status.textContent = "No model has been evaluated yet. Sections without results say what to run.";
   renderAll();
   let raf;

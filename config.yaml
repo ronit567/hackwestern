@@ -1,0 +1,87 @@
+seed: 42
+n_cases: 1000
+
+paths:
+  raw: data/raw
+  processed: data/processed
+  reports: reports
+
+cohort:
+  min_age: 18
+  ane_type: General
+  min_duration_s: 1800
+  required_tracks: [SNUADC/ART, Solar8000/ART_MBP]
+
+tracks:
+  numeric:
+    map: Solar8000/ART_MBP
+    sbp: Solar8000/ART_SBP
+    dbp: Solar8000/ART_DBP
+    nibp_map: Solar8000/NIBP_MBP
+    hr: Solar8000/HR
+    spo2: Solar8000/PLETH_SPO2
+    etco2: [Solar8000/ETCO2, Primus/ETCO2]
+    rr: [Solar8000/RR_CO2, Primus/RR_CO2]
+    fio2: Primus/FIO2
+    tv: Primus/TV
+    peep: Primus/PEEP_MBAR
+    pip: Primus/PIP_MBAR
+    sevo: Primus/EXP_SEVO
+    des: Primus/EXP_DES
+    mac: Primus/MAC
+    ppf_rate: Orchestra/PPF20_RATE
+    rftn_rate: [Orchestra/RFTN20_RATE, Orchestra/RFTN50_RATE]
+    phen_rate: Orchestra/PHEN_RATE
+    nepi_rate: Orchestra/NEPI_RATE
+    bis: BIS/BIS
+    bt: Solar8000/BT
+  wave:
+    art: SNUADC/ART
+    pleth: SNUADC/PLETH
+
+grid:
+  step_s: 2
+  ffill_max_s: 30
+  wave_hz_native: 500
+  wave_hz_model: 100
+
+events:
+  hypotension: {signal: map, threshold: 65, min_duration_s: 60}
+  hypoxemia: {signal: spo2, threshold: 90, min_duration_s: 120}
+  max_artifact_frac: 0.5        # a run with more artifact than this is not an event
+
+artifact:
+  map_min: 20
+  map_max: 200
+  pulse_pressure_min: 10
+  map_jump_max: 40              # mmHg within one 2 s step (vs previous sample)
+  spo2_min: 50
+
+windows:
+  pred_step_s: 30
+  input_s: 600
+  wave_input_s: 60
+  horizons_min: [5, 10, 15]
+  headline_horizon_min: 10
+  max_missing_frac: 0.5
+  flag_after_event_s: 300
+
+split:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+  n_folds: 5
+
+training:
+  neg_keep_frac: 0.2            # random negative downsampling with weight 1/frac (train only)
+
+alerts:
+  alarms_per_hour: 2.0          # threshold chosen on val to hit this rate
+  refractory_s: 300
+  rearm_delta: 0.10
+
+eval:
+  map_bins: [[65, 70], [70, 75], [75, 80], [80, 1000]]
+  spo2_bins: [[90, 95], [95, 101]]
+  bootstrap: 1000
+  age_bands: [18, 40, 60, 75, 200]

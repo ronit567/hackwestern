@@ -157,12 +157,14 @@ async function drawCase() {
 function caseChart(c, W, readout) {
   const ML = 40, MR = 12, TOP = 30, GAP = 26;
   const T = c.t_min, tMax = Math.max(c.duration_min || 0, T[T.length - 1] || 1);
-  const x = lin(0, tMax, ML, W - MR);
+  // anestart can precede casestart (negative minutes), so the axis starts at the earliest marker
+  const t0 = Math.min(0, ...Object.values(c.phases_min).filter((v) => v != null));
+  const x = lin(t0, tMax, ML, W - MR);
   const panels = PANELS.filter((p) => finite(c.series[p.key]).length);
   const risks = Object.entries(c.risk || {});
   let yTop = TOP;
   const rows = [...panels.map((p) => ({ ...p, vals: c.series[p.key] })),
-    ...risks.map(([ev, r]) => ({ key: `risk-${ev}`, label: `${cap(ev)} risk in the next 10 min, % (dashed: alert threshold; triangles: alerts)`, unit: "%", clamp: [0, 1], h: RISK_H, cls: "risk", zero: true, risk: r, ev }))]
+    ...risks.map(([ev, r]) => ({ key: `risk-${ev}`, label: `${cap(ev)} risk in the next 10 min, %`, unit: "%", clamp: [0, 1], h: RISK_H, cls: "risk", zero: true, risk: r, ev }))]
     .map((p) => { const r = { ...p, y0: yTop + 18 }; yTop = r.y0 + p.h + GAP; return r; });
   const H = yTop + 6;
   const tStep = [10, 30, 60, 120].find((st) => x(st) - x(0) >= 44) || 120;
@@ -170,7 +172,7 @@ function caseChart(c, W, readout) {
 
   // anesthesia-record grid: faint 5 min columns, stronger every tStep, across every panel
   for (const r of rows)
-    for (let t = 0; t <= tMax; t += 5)
+    for (let t = Math.ceil(t0 / 5) * 5; t <= tMax; t += 5)
       g.push(s("line", { class: t % tStep ? "grid" : "grid-major", x1: x(t), x2: x(t), y1: r.y0, y2: r.y0 + r.h }));
   for (let t = 0; t <= tMax; t += tStep) g.push(s("text", { x: x(t), y: H - 6, "text-anchor": "middle" }, t ? `${t}` : "0 min"));
 
@@ -192,7 +194,7 @@ function caseChart(c, W, readout) {
     const seen = finite(vals).filter((v) => v >= r.clamp[0] && v <= r.clamp[1]);
     let lo = r.zero ? 0 : Math.min(...seen, r.thr ?? Infinity), hi = Math.max(...seen, r.thr ?? -Infinity, r.zero ? 1 : -Infinity);
     if (r.risk) [lo, hi] = [0, 1];
-    const tk = ticks(lo, hi, r.h > 90 ? 4 : 2);
+    const tk = ticks(lo, hi, r.h > 90 ? 4 : r.h >= 80 ? 3 : 2);
     lo = Math.min(lo, tk[0]); hi = Math.max(hi, tk[tk.length - 1]);
     const y = lin(lo, hi, r.y0 + r.h, r.y0);
     g.push(s("text", { class: "title", x: ML, y: r.y0 - 6 }, r.label));
@@ -241,14 +243,17 @@ function caseChart(c, W, readout) {
     cursor.setAttribute("x1", x(t)); cursor.setAttribute("x2", x(t)); cursor.setAttribute("visibility", "visible");
   };
   const nearest = (t) => { let i = T.findIndex((u) => u >= t); return i < 0 ? T.length - 1 : i; };
-  const toT = (px) => ((px - ML) / (W - MR - ML)) * tMax;
+  const toT = (px) => t0 + ((px - ML) / (W - MR - ML)) * (tMax - t0);
   hit.addEventListener("pointermove", (e) => show(nearest(toT(e.clientX - svg.getBoundingClientRect().left))));
   svg.addEventListener("keydown", (e) => {
     const step = { ArrowRight: 6, ArrowLeft: -6, PageDown: 60, PageUp: -60 }[e.key]; // 6 bins = 1 min
     if (step) { e.preventDefault(); show((at < 0 ? 0 : at) + (e.shiftKey ? step * 10 : step)); }
     if (e.key === "Home" || e.key === "End") { e.preventDefault(); show(e.key === "Home" ? 0 : T.length - 1); }
   });
-  return h("div", { class: "chart" }, svg, h("ul", { class: "vh" }, summary.map((t) => h("li", {}, t))));
+  const ev = c.events || [];
+  return h("div", { class: "chart" }, svg, h("ul", { class: "vh" }, summary.map((t) => h("li", {}, t))),
+    c.events ? h("p", { class: "note" }, ev.length ? `Shaded: labelled events (${ev.map((e) => `${e.type} ${fmt(e.onset_min, 1)}–${fmt(e.end_min, 1)} min`).join("; ")}).` : "No labelled events in this surgery.",
+      risks.length ? " In the risk panels the dashed line is the alert threshold and triangles mark alerts." : null) : null);
 }
 
 function alertList(c) {

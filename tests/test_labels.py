@@ -57,6 +57,8 @@ def raw_case():
     d.loc[[steps(41, 41).start + k for k in (0, 10, 20)], "map"] = 5.0
     d.loc[d.index[steps(42, 42.2)], ["map", "sbp", "dbp"]] = np.nan  # a 12 s dropout inside it doesn't end the run
     d.loc[d.index[steps(50, 50.9)], "map"] = 60.0  # 54 s dip: no event
+    d.loc[d.index[steps(65, 66)], "map"] = 60.0  # 60 s low MAP with a flush spike mid-way: still one event
+    d.loc[steps(65.5, 65.5).start, "map"] = 150.0
     d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
     d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
     d.loc[d.index[steps(110, 113)], "spo2"] = 85.0  # real hypoxemia, pleth fine
@@ -127,9 +129,9 @@ def test_event_conventions_and_artifact_runs():
     hypo = ev[ev.event == "hypotension"]
     # ADC -495 (60-61 min) is an all-artifact run; 54 s and 58 s dips are too short; the zero lines at 0-4 and 178-180
     # min are trimmed off the low MAP next to them (untrimmed they'd make those runs > 50 % artifact)
-    assert hypo.onset_sec.tolist() == [4 * 60, 40 * 60, 80 * 60, 176.5 * 60]
-    assert hypo.duration_s.tolist() == [180, 180, 60, 90] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
-    assert hypo.artifact_frac.tolist() == [0, 3 / 90, 0, 0]
+    assert hypo.onset_sec.tolist() == [4 * 60, 40 * 60, 65 * 60, 80 * 60, 176.5 * 60]
+    assert hypo.duration_s.tolist() == [180, 180, 60, 60, 90] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
+    assert hypo.artifact_frac.tolist() == [0, 3 / 90, 1 / 30, 0, 0]
     g = clean_case(raw_case())
     assert g["map"][steps(146, 146 + 40 / 60 + FILL * STEP / 60)].eq(60).all()  # the causal grid fills the dropout's head
     assert ev[ev.event == "hypoxemia"].onset_sec.tolist()[:1] == [110 * 60] and len(ev[ev.event == "hypoxemia"]) == 2  # probe-off at 130 min and motion at 140 min are not events

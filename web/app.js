@@ -352,7 +352,7 @@ function metricTables() {
       h("caption", {}, cap(ev), n ? h("span", { class: "note" }, `  ${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times`) : null),
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), DISC.map(([, l]) => h("th", { scope: "col" }, l)))),
       Object.entries(byH).map(([H, byM]) => h("tbody", {},
-        h("tr", { class: "group" }, h("th", { scope: "colgroup", colspan: DISC.length + 1 }, `${H} minutes ahead`)),
+        h("tr", { class: "group" }, h("th", { scope: "rowgroup", colspan: DISC.length + 1 }, `${H} minutes ahead`)),
         metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
           h("th", { scope: "row" }, modelName(m)), DISC.map(([k, , d, p]) => cell(byM[m][k], d ?? 2, p))))))));
   });

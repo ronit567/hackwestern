@@ -22,6 +22,8 @@ def load(p):
 @pytest.fixture(scope="module")
 def out(tmp_path_factory):
     out = tmp_path_factory.mktemp("web")
+    (out / "cases").mkdir()
+    (out / "cases" / "99999.json").write_text("{}")  # left by an earlier export; must be removed
     if not export(max_cases=4, out=out):
         pytest.skip("no cached cases in data/raw")
     return out
@@ -31,6 +33,7 @@ def test_case_files_match_source(out):
     cases = pd.read_csv(RAW / "cases.csv", encoding="utf-8-sig").set_index("caseid")
     index = load(out / "cases" / "index.json")
     assert len(index) == 4
+    assert {p.stem for p in (out / "cases").glob("*.json")} == {"index", *(str(e["caseid"]) for e in index)}
     for entry in index:
         c = entry["caseid"]
         case, row = load(out / "cases" / f"{c}.json"), cases.loc[c]

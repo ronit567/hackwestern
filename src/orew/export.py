@@ -139,6 +139,9 @@ def export(max_cases=50, out=OUT):
     ev, split_of = labels()
     chosen = pick(ids, cohort, ev, split_of, max_cases)
     by_case, drivers, thr = load_risk(set(chosen)) or ({}, {}, {})
+    for f in (out / "cases").glob("*.json"):  # earlier exports' cases, which may predate the split rules
+        if f.stem not in {"index", *map(str, chosen)}:
+            f.unlink()
     pct_time, has, index = {}, {}, {}
     for c in ids:
         df = pd.read_parquet(RAW / f"{c:04d}.parquet")

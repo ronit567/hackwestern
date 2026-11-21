@@ -251,7 +251,11 @@ The page already draws all four: shaded events, risk panels with the threshold, 
   "ablation":    {event: {H: {model: "snapshot", with_drugs: {auroc, auprc}, without_drugs: {auroc, auprc}}}}
 }
 ```
-- `metric` ∈ `auroc, auprc, brier, sens_at_90spec, alarms_per_hour, false_per_true_alarm, median_lead_min, pct_warned_5min, event_recall`. The alert metrics come from the p10 alert simulation (threshold from `alerts`, 5 min refractory period, `rearm_delta`). The page reads them at the headline horizon.
+- `metric` ∈ `auroc, auprc, brier, sens_at_90spec, alarms_per_hour, false_per_true_alarm, median_lead_min, pct_warned_5min, event_recall`. The alert metrics come from the p10 alert simulation (threshold from `alerts`, 5 min refractory period, `rearm_delta`). The page reads them at the headline horizon. Definitions (W = 10 min, the alert horizon):
+  - a **true** alarm has an onset of that event in (t, t + W]; every other alarm is false. `false_per_true_alarm` = false / true alarms; `alarms_per_hour` = all alarms / hours of eligible prediction time;
+  - an event is **warned** if an alarm fired in [onset − W, onset). Its **lead** is onset − the first such alarm, in min;
+  - `median_lead_min` is the median lead over **warned** events only, so it is always shown next to `event_recall`;
+  - `event_recall` = warned events / all events; `pct_warned_5min` = events with lead ≥ 5 min / **all** events.
 - `bins`: MAP `65-70, 70-75, 75-80, >80` (hypotension) and SpO2 `90-94, >=95` (hypoxemia), from `config.yaml` `eval.*_bins` (`lo` inclusive, `hi` exclusive), binned on the current value at t.
 - `subgroups` attrs: `age_band` (`eval.age_bands`), `sex`, `asa`, `department`, `emergency`.
 - `split: "test"` is written only by the single locked test run. The page shows the split in the headline.

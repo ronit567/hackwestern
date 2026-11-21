@@ -332,7 +332,7 @@ function headline(W) {
     out.push(h("h3", {}, `${cap(ev)}, by current ${SIGNAL_OF[ev]}`),
       h("p", { class: "verdict" }, `${modelName(fm)} has the higher AUROC in ${wins} of ${bins.length} ${SIGNAL_OF[ev]} bands (point estimates; check the intervals).`,
         o?.median_lead_min && b1?.median_lead_min
-          ? ` Median warning lead ${fmt(o.median_lead_min[0], 1)} min against ${fmt(b1.median_lead_min[0], 1)} min; events warned at least 5 min ahead ${pct(o.pct_warned_5min?.[0])} against ${pct(b1.pct_warned_5min?.[0])}.`
+          ? ` Events warned in the 10 min before onset ${pct(o.event_recall?.[0])} against ${pct(b1.event_recall?.[0])}; median lead of those warned ${fmt(o.median_lead_min[0], 1)} min against ${fmt(b1.median_lead_min[0], 1)} min; events warned at least 5 min ahead ${pct(o.pct_warned_5min?.[0])} against ${pct(b1.pct_warned_5min?.[0])}.`
           : null),
       h("div", { class: "pair" },
         dumbbell("AUROC", rows("auroc"), cw, [modelName(fm), MODEL.baseline1]),
@@ -419,7 +419,7 @@ function alertsSection() {
   const H = HH(), a = metrics.alerts || {};
   const out = [h("p", {}, `An alert fires when a model's ${H}-minute risk crosses its threshold, then stays quiet for 5 minutes unless the risk rises further. `,
     a.chosen_on ? `Each threshold was chosen on the ${a.chosen_on === "val" ? "validation" : a.chosen_on} split so that every model alarms about ${fmt(a.alarms_per_hour_target, 1)} times per hour, which keeps the comparison fair. ` : null,
-    "Event recall is the share of events with an alert in the 10 minutes before onset; repeat alarms within 5 minutes count once.")];
+    "Event recall is the share of events with an alert in the 10 minutes before onset; repeat alarms within 5 minutes count once. Median lead runs from the first such alert and covers warned events only; the 5+ min share is of all events.", " An alarm is true if an onset follows within 10 minutes.")];
   for (const [ev, byH] of Object.entries(metrics.overall || {})) {
     const byM = byH[H] || {};
     out.push(h("div", { class: "scroll" }, h("table", { class: "metrics" }, h("caption", {}, cap(ev)),

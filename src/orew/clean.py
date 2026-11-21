@@ -57,7 +57,7 @@ def beats(x):
             60 * FS / dur,
             x[pk],
         ))
-    return pd.DataFrame(rows, columns=["available_at", "pp", "dpdt", "sys_area", "hr", "sbp"])
+    return pd.DataFrame(rows, columns=["available_at", "pp", "dpdt", "sys_area", "hr", "sbp"], dtype=float)
 
 
 def beat_grid(x, n):
@@ -66,7 +66,7 @@ def beat_grid(x, n):
     r = b.set_index(pd.to_timedelta(b.available_at / FS, unit="s"))[["pp", "sbp"]].rolling(BEAT_WIN, min_periods=3)
     b["ppv"] = ((r.pp.max() - r.pp.min()) / r.pp.mean()).to_numpy()
     b["sbp_sd"] = r.sbp.std().to_numpy()
-    g = to_grid(b.available_at.to_numpy(), b.drop(columns=["available_at", "sbp"]), n)
+    g = to_grid(b.available_at.to_numpy(int), b.drop(columns=["available_at", "sbp"]), n)
     return g.add_prefix("beat_").reset_index(drop=True)
 
 

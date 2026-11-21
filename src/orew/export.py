@@ -7,7 +7,7 @@ import json
 
 import pandas as pd
 
-from orew import RAW, REPORTS
+from orew import PROCESSED, RAW, REPORTS
 
 OUT = REPORTS / "web"
 STEP = 10  # s, case-explorer resolution
@@ -35,11 +35,18 @@ def rftn_ug_h(df):
     return (20 * df.rftn_rate).add(50 * df.get("rftn50_rate", pd.Series(dtype=float)), fill_value=0)
 
 
-def case_json(df, row):
+def labels():
+    """labels.py outputs: events table and {subjectid: split}, each None until labels.py has run."""
+    ev, sp = PROCESSED / "events.parquet", PROCESSED / "splits.json"
+    return (pd.read_parquet(ev) if ev.exists() else None,
+            {s: k for k, v in json.loads(sp.read_text()).items() for s in v} if sp.exists() else None)
+
+
+def case_json(df, row, ev=None, split_of=None):
     df = df.assign(rftn_ug_h=rftn_ug_h(df))
     g = df.groupby(-(-df.t_sec // STEP) * STEP)[SERIES].last()  # last finite value in (t - 10, t], like the 2 s grid
     t0 = row.casestart
-    return {
+    out = {
         "caseid": int(row.name),
         "demographics": {k: val(row[k]) for k in DEMO},
         "duration_min": val(round((row.caseend - t0) / 60, 1)),
@@ -47,25 +54,39 @@ def case_json(df, row):
         "t_min": ((g.index - t0) / 60).round(2).tolist(),
         "series": {c: g[c].round(1).astype(object).where(g[c].notna(), None).tolist() for c in SERIES},
     }
+    if split_of:
+        out["split"] = split_of.get(row.subjectid)
+    # a labelled case with no events has no rows in events.parquet, so "labelled" = labels.py wrote its grid
+    if ev is not None and (PROCESSED / "grid" / f"{row.name:04d}.parquet").exists():
+        out["events"] = [{"type": r.event, "onset_min": round((r.onset_sec - t0) / 60, 2), "end_min": round((r.end_sec - t0) / 60, 2)}
+                         for r in ev[ev.caseid == row.name].itertuples()]
+    return out
 
 
 def export(max_cases=50, out=OUT):
     cases = pd.read_csv(RAW / "cases.csv", encoding="utf-8-sig").set_index("caseid")
     cohort = pd.read_csv(RAW / "cohort.csv")
     ids = [c for c in cohort.caseid if (RAW / f"{c:04d}.parquet").exists()]
+    ev, split_of = labels()
     pct_time, has, index = {}, {}, []
     for i, c in enumerate(ids):
         df = pd.read_parquet(RAW / f"{c:04d}.parquet")
         pct_time[c], has[c] = df.drop(columns="t_sec").notna().mean(), df.drop(columns="t_sec").notna().any()
         if i < max_cases:
-            case = case_json(df, cases.loc[c])
+            case = case_json(df, cases.loc[c], ev, split_of)
             dump(case, out / "cases" / f"{c}.json")
-            index.append({"caseid": int(c), "duration_min": case["duration_min"], **case["demographics"]})
+            index.append({"caseid": int(c), "duration_min": case["duration_min"], **case["demographics"], "split": case.get("split")})
     dump(index, out / "cases" / "index.json")
 
     c = cases.loc[ids]
     age = c.age.quantile([0, 0.25, 0.5, 0.75, 1]).round(1).tolist()
     pt = pd.DataFrame(pct_time)  # signals x cases
+    later = {}
+    if ev is not None:
+        later["events"] = {e: {"n_events": int(n), "n_cases": int(k)} for e, (n, k) in ev.groupby("event").caseid.agg(["size", "nunique"]).iterrows()}
+    if split_of:
+        s = cohort.assign(split=cohort.subjectid.map(split_of))  # the split covers the whole cohort, not only cached cases
+        later["splits"] = {k: {"n_subjects": int(g.subjectid.nunique()), "n_cases": len(g)} for k, g in s.groupby("split")}
     dump({
         "n_cohort": len(cohort),
         "n_cached": len(ids),
@@ -80,6 +101,7 @@ def export(max_cases=50, out=OUT):
             {"name": k, "pct_time": round(t * 100, 1), "pct_cases": round(n * 100, 1)}
             for k, t, n in zip(pt.index, pt.mean(axis=1), pd.DataFrame(has).mean(axis=1))
         ],
+        **later,
     }, out / "cohort.json")
     return ids
 

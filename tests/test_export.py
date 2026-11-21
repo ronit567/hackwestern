@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from orew import RAW, ROOT
-from orew.export import PHASES, SERIES, STEP, export, rftn_ug_h
+from orew.export import PHASES, SERIES, STEP, export, labels, rftn_ug_h
 
 
 def load(p):
@@ -59,6 +59,19 @@ def test_cohort_json(out):
     assert sum(coh["sex"].values()) == sum(coh["asa"].values()) == coh["emergency"]["of"] == n
     assert {s["name"] for s in coh["signals"]} >= set(SERIES) - {"rftn_ug_h"}  # derived, not a raw column
     assert all(0 <= s["pct_time"] <= s["pct_cases"] <= 100 for s in coh["signals"])
+
+
+def test_label_fields(out):
+    ev, split_of = labels()
+    if ev is None or not split_of:
+        pytest.skip("labels.py has not run")
+    for entry in load(out / "cases" / "index.json"):
+        case = load(out / "cases" / f"{entry['caseid']}.json")
+        assert case["split"] == entry["split"] in {"train", "val", "test", None}
+        for e in case.get("events", []):
+            assert e["type"] in {"hypotension", "hypoxemia"} and e["onset_min"] <= e["end_min"]
+    coh = load(out / "cohort.json")
+    assert sum(s["n_cases"] for s in coh["splits"].values()) == coh["n_cohort"]
 
 
 def test_page_script_parses():

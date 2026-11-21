@@ -14,7 +14,7 @@ const SIGNALS = {
   map: "Arterial MAP", sbp: "Arterial systolic", dbp: "Arterial diastolic", nibp_map: "Cuff MAP (NIBP)",
   hr: "Heart rate", spo2: "SpO2", etco2: "End-tidal CO2", rr: "Respiratory rate", fio2: "FiO2",
   tv: "Tidal volume", peep: "PEEP", pip: "Peak airway pressure", sevo: "Sevoflurane", des: "Desflurane",
-  mac: "MAC", ppf_rate: "Propofol infusion", rftn_rate: "Remifentanil infusion",
+  mac: "MAC", ppf_rate: "Propofol infusion", rftn_rate: "Remifentanil infusion", rftn50_rate: "Remifentanil infusion, 50 µg/mL",
   phen_rate: "Phenylephrine infusion", nepi_rate: "Norepinephrine infusion", bis: "BIS",
   bt: "Body temperature", beat_pp: "Pulse pressure, per beat", beat_dpdt: "Max dP/dt, per beat",
   beat_sys_area: "Systolic area, per beat", beat_hr: "Beat rate from arterial line",
@@ -151,7 +151,7 @@ async function drawCase() {
   const readout = h("p", { class: "readout", "aria-live": "polite" }, "Point at the chart, or focus it and use the arrow keys, to read values.");
   view.replaceChildren(
     h("p", { class: "who" }, `${who}. ${d.department || ""}${d.opname ? `: ${d.opname}` : ""}${d.optype ? ` (${d.optype})` : ""}.`),
-    ...notes, readout, caseChart(c, view.clientWidth, readout), alertList(c));
+    ...notes, readout, caseChart(c, view.clientWidth, readout), alertList(c) || "");
 }
 
 function caseChart(c, W, readout) {

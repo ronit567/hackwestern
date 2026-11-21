@@ -78,7 +78,7 @@ function overview(c) {
     h("h3", {}, "Signal availability"),
     h("p", { class: "note" }, "Share of 2 s samples with a value, averaged over downloaded surgeries, and share of surgeries with any value."),
     h("div", { class: "scroll" }, h("table", { class: "signals" },
-      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Signal"), h("td", {}),
+      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Signal"), h("td", { class: "bar" }),
         h("th", { scope: "col" }, "Of time"), h("th", { scope: "col" }, "Of surgeries"))),
       h("tbody", {}, rows))));
 }

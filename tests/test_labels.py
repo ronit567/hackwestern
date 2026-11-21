@@ -33,6 +33,9 @@ def raw_case():
     for a, b in [(5, 5.3), (20, 21.5), (70, 70.2)]:  # short, long and 12 s gaps
         d.loc[d.index[steps(a, b)], ["map", "sbp", "dbp", "spo2"]] = np.nan
     d.loc[d.index[steps(0, 4)], ["map", "sbp", "dbp"]] = 0.0  # line not yet placed
+    d.loc[d.index[steps(4, 7)], "map"] = 55.0  # placed while MAP is low: event from the first real sample
+    d.loc[d.index[steps(176.5, 178)], "map"] = 55.0  # 90 s low MAP, then the line is removed: event up to the last real sample
+    d.loc[d.index[steps(178, 180)], ["map", "sbp", "dbp"]] = 0.0
     for a in (30, 45.05, 100):  # flush: ramp, plateau above 200, ramp down, flat wave
         i = steps(a, a).start
         d.loc[i : i + 6, "map"] = [130, 230, 250, 250, 170, 140, 90]
@@ -122,10 +125,11 @@ def table(raw):
 def test_event_conventions_and_artifact_runs():
     _, ev, _ = table(raw_case())
     hypo = ev[ev.event == "hypotension"]
-    # zeroed line (0-4 min) and ADC -495 (60-61 min) are all-artifact runs; 54 s and 58 s dips are too short
-    assert hypo.onset_sec.tolist() == [40 * 60, 80 * 60]
-    assert hypo.duration_s.tolist() == [180, 60] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
-    assert hypo.artifact_frac.tolist() == [3 / 90, 0]
+    # ADC -495 (60-61 min) is an all-artifact run; 54 s and 58 s dips are too short; the zero lines at 0-4 and 178-180
+    # min are trimmed off the low MAP next to them (untrimmed they'd make those runs > 50 % artifact)
+    assert hypo.onset_sec.tolist() == [4 * 60, 40 * 60, 80 * 60, 176.5 * 60]
+    assert hypo.duration_s.tolist() == [180, 180, 60, 90] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
+    assert hypo.artifact_frac.tolist() == [0, 3 / 90, 0, 0]
     g = clean_case(raw_case())
     assert g["map"][steps(146, 146 + 40 / 60 + FILL * STEP / 60)].eq(60).all()  # the causal grid fills the dropout's head
     assert ev[ev.event == "hypoxemia"].onset_sec.tolist()[:1] == [110 * 60] and len(ev[ev.event == "hypoxemia"]) == 2  # probe-off at 130 min and motion at 140 min are not events

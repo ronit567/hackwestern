@@ -16,17 +16,22 @@ W = CFG["windows"]
 def events(g):
     """One row per event. A run is a maximal stretch of consecutive grid steps whose {signal}_raw (artifact kept at its
     raw value; gaps of <= 30 s forward-filled, longer gaps stay NaN, and NaN ends a run) is below threshold. Labels
-    may see how long a gap lasts, so unlike the causal clean grid the head of a > 30 s gap is not filled. onset_sec /
-    end_sec are the first / last grid time of the run, duration_s = steps * STEP (each step stands for its 2 s bin),
-    artifact_frac = share of art_{signal} steps. A run is an event iff duration_s >= min_duration_s and
-    artifact_frac <= max_artifact_frac."""
+    may see how long a gap lasts, so unlike the causal clean grid the head of a > 30 s gap is not filled. Artifact
+    steps at either end of a run are trimmed off (a zero line before the catheter is placed or after it is removed
+    would otherwise join the real low MAP next to it), so onset_sec / end_sec are the first / last non-artifact grid
+    time of the run, duration_s = steps * STEP (each step stands for its 2 s bin), artifact_frac = share of
+    art_{signal} steps in between. A run is an event iff duration_s >= min_duration_s and artifact_frac <= max_artifact_frac."""
     t, out = g.t_sec.to_numpy(), []
     for e, c in EV.items():
         r = g[f"{c['signal']}_raw"]
         v = r.ffill().where(r.notna() | r.isna().groupby(r.notna().cumsum()).transform("sum").le(FILL))
         d = np.diff(np.r_[0, (v < c["threshold"]).astype(int), 0])
         a, b = np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1
-        art = np.r_[0, np.cumsum(g[f"art_{c['signal']}"])]
+        flag = g[f"art_{c['signal']}"].to_numpy()
+        real = np.r_[-1, np.flatnonzero(~flag), len(flag)]
+        a, b = real[np.searchsorted(real, a)], real[np.searchsorted(real, b, "right") - 1]
+        a, b = a[a <= b], b[a <= b]  # an all-artifact run trims to nothing
+        art = np.r_[0, np.cumsum(flag)]
         n = b - a + 1
         r = pd.DataFrame({"event": e, "onset_sec": t[a], "end_sec": t[b], "duration_s": n * STEP,
                           "artifact_frac": (art[b + 1] - art[a]) / n})

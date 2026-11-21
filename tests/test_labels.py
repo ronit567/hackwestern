@@ -52,6 +52,7 @@ def raw_case():
     d.loc[d.index[steps(130.2, 134)], "spo2"] = 80.0
     d.loc[d.index[steps(40, 43)], "map"] = 55.0  # real hypotension with three below-threshold artifact points
     d.loc[[steps(41, 41).start + k for k in (0, 10, 20)], "map"] = 5.0
+    d.loc[d.index[steps(42, 42.2)], ["map", "sbp", "dbp"]] = np.nan  # a 12 s dropout inside it doesn't end the run
     d.loc[d.index[steps(50, 50.9)], "map"] = 60.0  # 54 s dip: no event
     d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
     d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
@@ -63,6 +64,8 @@ def raw_case():
     k = steps(174.5, 179.5)  # real gradual desaturation (<= 1 per reading) on a pleth with spikes past the rail
     d.loc[d.index[k], "spo2"] = np.round(np.linspace(97, 82, k.stop - k.start))
     d.loc[d.index[k][::8], "pleth_amp"] = 300.0
+    d.loc[d.index[steps(146, 146 + 40 / 60)], "map"] = 60.0  # 40 s below threshold, then a 60 s dropout: no event
+    d.loc[d.index[steps(146 + 40 / 60, 147 + 40 / 60)], ["map", "sbp", "dbp"]] = np.nan
     d.loc[d.index[steps(150, 158)], ["map", "sbp", "dbp"]] = np.nan  # 8 min without MAP
     k = steps(95, 96.5)  # blood draw: MAP decays 80 -> 40 (< 40 per step), sent without SBP/DBP, no ART beats
     d.loc[d.index[k], "map"] = 40 + 40 * np.exp(-np.arange(k.stop - k.start) / 8)
@@ -123,6 +126,8 @@ def test_event_conventions_and_artifact_runs():
     assert hypo.onset_sec.tolist() == [40 * 60, 80 * 60]
     assert hypo.duration_s.tolist() == [180, 60] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
     assert hypo.artifact_frac.tolist() == [3 / 90, 0]
+    g = clean_case(raw_case())
+    assert g["map"][steps(146, 146 + 40 / 60 + FILL * STEP / 60)].eq(60).all()  # the causal grid fills the dropout's head
     assert ev[ev.event == "hypoxemia"].onset_sec.tolist()[:1] == [110 * 60] and len(ev[ev.event == "hypoxemia"]) == 2  # probe-off at 130 min and motion at 140 min are not events
 
 

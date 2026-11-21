@@ -7,20 +7,24 @@ import numpy as np
 import pandas as pd
 
 from orew import CFG, PROCESSED, RAW, REPORTS
-from orew.clean import STEP, clean_case
+from orew.clean import FILL, STEP, clean_case
 
 EV = {k: v for k, v in CFG["events"].items() if isinstance(v, dict)}
 W = CFG["windows"]
 
 
 def events(g):
-    """One row per event. A run is a maximal stretch of consecutive grid steps whose {signal}_raw (ffilled <= 30 s,
-    artifact kept at its raw value) is below threshold; NaN ends a run. onset_sec / end_sec are the first / last grid
-    time of the run, duration_s = steps * STEP (each step stands for its 2 s bin), artifact_frac = share of art_{signal}
-    steps. A run is an event iff duration_s >= min_duration_s and artifact_frac <= max_artifact_frac."""
+    """One row per event. A run is a maximal stretch of consecutive grid steps whose {signal}_raw (artifact kept at its
+    raw value; gaps of <= 30 s forward-filled, longer gaps stay NaN, and NaN ends a run) is below threshold. Labels
+    may see how long a gap lasts, so unlike the causal clean grid the head of a > 30 s gap is not filled. onset_sec /
+    end_sec are the first / last grid time of the run, duration_s = steps * STEP (each step stands for its 2 s bin),
+    artifact_frac = share of art_{signal} steps. A run is an event iff duration_s >= min_duration_s and
+    artifact_frac <= max_artifact_frac."""
     t, out = g.t_sec.to_numpy(), []
     for e, c in EV.items():
-        d = np.diff(np.r_[0, (g[f"{c['signal']}_raw"] < c["threshold"]).astype(int), 0])
+        r = g[f"{c['signal']}_raw"]
+        v = r.ffill().where(r.notna() | r.isna().groupby(r.notna().cumsum()).transform("sum").le(FILL))
+        d = np.diff(np.r_[0, (v < c["threshold"]).astype(int), 0])
         a, b = np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1
         art = np.r_[0, np.cumsum(g[f"art_{c['signal']}"])]
         n = b - a + 1

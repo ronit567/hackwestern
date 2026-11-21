@@ -175,8 +175,8 @@ def clean_case(raw):
         x,
         pd.DataFrame({
             "nibp_map": n.where(n.ne(n.ffill().shift())),  # cuff re-sent every 2 s: a reading only when it changes; no ffill
-            "map_raw": raw["map"].ffill(limit=FILL),  # label signals keep artifact at its raw value
-            "spo2_raw": raw.spo2.ffill(limit=FILL),
+            "map_raw": raw["map"],  # label signals: artifact at its raw value, unfilled (labels.py fills gaps <= 30 s)
+            "spo2_raw": raw.spo2,
             "art_map": carry(art_map, m),
             "art_spo2": carry(art_spo2, s),
         }),

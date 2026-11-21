@@ -1,7 +1,11 @@
+import json
+
 import numpy as np
 import pandas as pd
+import pytest
 
-from orew import CFG
+import orew.labels as L
+from orew import CFG, PROCESSED
 from orew.clean import BEAT, FILL, STEP, clean_case
 
 COLS = list(CFG["tracks"]["numeric"]) + BEAT + ["pleth_amp", "pleth_cv"]
@@ -35,8 +39,15 @@ def raw_case():
         d.loc[i : i + 5, "sbp"] = d.loc[i : i + 5, "map"] + 3
         d.loc[i : i + 5, "dbp"] = d.loc[i : i + 5, "map"] - 3
     d.loc[d.index[steps(60, 61)], "map"] = -495.0  # raw ADC 0
-    d.loc[d.index[steps(130, 132)], "pleth_amp"] = np.nan  # probe off: pleth lost, SpO2 reads low
-    d.loc[d.index[steps(130.2, 132)], "spo2"] = 80.0
+    d.loc[d.index[steps(130, 134)], "pleth_amp"] = np.nan  # probe off: pleth lost, SpO2 reads low for 3.8 min
+    d.loc[d.index[steps(130.2, 134)], "spo2"] = 80.0
+    d.loc[d.index[steps(40, 43)], "map"] = 55.0  # real hypotension with three below-threshold artifact points
+    d.loc[[steps(41, 41).start + k for k in (0, 10, 20)], "map"] = 5.0
+    d.loc[d.index[steps(50, 50.9)], "map"] = 60.0  # 54 s dip: no event
+    d.loc[d.index[steps(80, 81)], "map"] = 60.0  # exactly 30 steps = 60 s: event
+    d.loc[d.index[steps(85, 85 + 58 / 60)], "map"] = 60.0  # 29 steps: no event
+    d.loc[d.index[steps(110, 113)], "spo2"] = 85.0  # real hypoxemia, pleth fine
+    d.loc[d.index[steps(150, 158)], ["map", "sbp", "dbp"]] = np.nan  # 8 min without MAP
     return d
 
 
@@ -56,7 +67,7 @@ def test_clean_case_rules():
     assert g.art_map[i : i + 6].all() and not g.art_map[i + 6]  # whole flush flagged, recovery sample kept
     assert (g["map"][i : i + 6] == raw["map"][i - 1]).all()  # bridged by the last valid MAP
     assert (g[BEAT][i : i + 6 + 6] == raw[BEAT].iloc[i - 1]).all().all()  # artifact beats replaced, 12 s window
-    assert g.art_spo2[steps(130.2, 132)].all() and not g.art_spo2[steps(120, 130)].any()
+    assert g.art_spo2[steps(130.2, 134)].all() and not g.art_spo2[steps(120, 130)].any()
     # ffill: the first FILL steps of a gap are filled, the rest stay NaN and are masked
     gap = steps(20, 21.5)
     assert g["map"][gap][:FILL].notna().all() and g["map"][gap][FILL:].isna().all()
@@ -65,3 +76,95 @@ def test_clean_case_rules():
     assert g.nibp_map.notna().sum() == raw.nibp_map.ne(raw.nibp_map.shift()).sum()
     np.testing.assert_allclose(g.rftn_ug_h, np.r_[20 * raw.rftn_rate[: N // 2], 50 * raw.rftn50_rate[N // 2 :]])
     assert "rftn_rate" not in g and "rftn50_rate" not in g
+
+
+H = CFG["windows"]["horizons_min"]
+
+
+def table(raw):
+    g = clean_case(raw)
+    return g, L.events(g), L.prediction_table(g, 7, 70)
+
+
+def test_event_conventions_and_artifact_runs():
+    _, ev, _ = table(raw_case())
+    hypo = ev[ev.event == "hypotension"]
+    # zeroed line (0-4 min) and ADC -495 (60-61 min) are all-artifact runs; 54 s and 58 s dips are too short
+    assert hypo.onset_sec.tolist() == [40 * 60, 80 * 60]
+    assert hypo.duration_s.tolist() == [180, 60] and (hypo.end_sec == hypo.onset_sec + hypo.duration_s - STEP).all()
+    assert hypo.artifact_frac.tolist() == [3 / 90, 0]
+    assert ev[ev.event == "hypoxemia"].onset_sec.tolist() == [110 * 60]  # probe-off at 130 min is not an event
+
+
+def test_nibp_never_changes_hypotension():
+    raw = raw_case()
+    _, ev, pt = table(raw)
+    raw["nibp_map"] = rng.uniform(0, 300, N)
+    raw.loc[rng.random(N) < 0.5, "nibp_map"] = np.nan
+    _, ev2, pt2 = table(raw)
+    hcols = [c for c in pt if "hypotension" in c or c == "map_now"]
+    pd.testing.assert_frame_equal(ev[ev.event == "hypotension"], ev2[ev2.event == "hypotension"])
+    pd.testing.assert_frame_equal(pt[hcols], pt2[hcols])
+
+
+def test_every_time_kept_and_only_documented_exclusions():
+    g, ev, pt = table(raw_case())
+    last = g.t_sec.iat[-1]
+    assert pt.t_sec.tolist() == list(range(600, last + 1, 30))  # every 30 s from input_s, none dropped
+    assert len(pt) == len(pt.drop_duplicates("t_sec"))
+    for e, c in L.EV.items():
+        s, x = c["signal"], ev[ev.event == e]
+        bad = (g[s].isna() | g[f"art_{s}"]).to_numpy()
+        for r in pt.itertuples():
+            in_progress = ((x.onset_sec <= r.t_sec) & (r.t_sec <= x.end_sec)).any()
+            frac = bad[(g.t_sec > r.t_sec - 600) & (g.t_sec <= r.t_sec)].mean()
+            assert getattr(r, f"eligible_{e}") == (not in_progress and frac <= 0.5)
+            if in_progress:
+                assert not getattr(r, f"eligible_{e}")
+            assert getattr(r, f"flag_{e}") == ((r.t_sec > x.end_sec) & (r.t_sec <= x.end_sec + 300)).any()
+    assert not pt.eligible_hypotension[(pt.t_sec >= 158 * 60) & (pt.t_sec <= 160 * 60)].any()  # MAP gap
+    assert not pt.eligible_hypotension[(pt.t_sec >= 40 * 60) & (pt.t_sec < 43 * 60)].any()  # in progress
+
+
+def test_label_window_after_input_window():
+    g, ev, pt = table(raw_case())
+    for e, c in L.EV.items():
+        on = ev[ev.event == e].onset_sec.to_numpy()
+        for h in H:
+            y = pt[f"y_{e}_{h}"]
+            for t, v in zip(pt.t_sec, y):
+                hit = ((on > t) & (on <= t + h * 60)).any()
+                assert np.isnan(v) or v == hit  # positives only from onsets in (t, t + H]
+        assert (pt[f"next_onset_{e}_s"].dropna() > 0).all()
+        np.testing.assert_array_equal(pt[f"{c['signal']}_now"], g.set_index("t_sec")[c["signal"]].loc[pt.t_sec])
+    assert pt.loc[pt.t_sec == 40 * 60, "y_hypotension_5"].item() == 0  # onset at t itself is in progress, not ahead
+
+
+def test_censoring_at_end_of_recording():
+    g, _, pt = table(raw_case())
+    last = g.t_sec.iat[-1]
+    for e in L.EV:
+        for h in H:
+            y, late = pt[f"y_{e}_{h}"], pt.t_sec + h * 60 > last
+            assert y[late].isna().all() and y[~late].notna().all()
+
+
+def test_saved_splits_disjoint_and_reproducible(monkeypatch, tmp_path):
+    if not (PROCESSED / "splits.json").exists():
+        pytest.skip("run uv run python -m orew.labels first")
+    splits = json.loads((PROCESSED / "splits.json").read_text())
+    folds = json.loads((PROCESSED / "folds.json").read_text())
+    sets = [set(v) for v in splits.values()]
+    assert sum(map(len, sets)) == len(set.union(*sets))  # no subject in two splits
+    assert {int(k) for k in folds} == set(splits["train"]) and set(folds.values()) == set(range(CFG["split"]["n_folds"]))
+    if (PROCESSED / "pred_table.parquet").exists():
+        pt = pd.read_parquet(PROCESSED / "pred_table.parquet", columns=["subjectid", "split"])
+        assert pt.groupby("subjectid").split.nunique().max() == 1
+        assert all(pt.subjectid[pt.split == k].isin(v).all() for k, v in splits.items())
+    monkeypatch.setattr(L, "PROCESSED", tmp_path)
+    L.split()
+    for f in ("splits.json", "folds.json"):
+        assert (tmp_path / f).read_text() == (PROCESSED / f).read_text()
+    (tmp_path / "folds.json").write_text("{}")
+    with pytest.raises(RuntimeError):
+        L.split()

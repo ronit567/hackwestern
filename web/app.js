@@ -88,10 +88,12 @@ const cap = (t) => t[0].toUpperCase() + t.slice(1);
 
 // ---- chart helpers
 const lin = (d0, d1, r0, r1) => (v) => r0 + ((v - d0) / (d1 - d0)) * (r1 - r0);
-function ticks(lo, hi, n = 4) {
+function niceStep(lo, hi, n) {
   const raw = (hi - lo) / n, p = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((st) => st >= raw);
-  const out = [];
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((st) => st >= raw);
+}
+function ticks(lo, hi, n = 4) {
+  const step = niceStep(lo, hi, n), out = [];
   for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
   return out;
 }
@@ -195,11 +197,15 @@ function caseChart(c, W, readout) {
     const vals = r.risk ? r.risk.p10 : r.vals, ts = r.risk ? r.risk.t_min : T;
     const seen = finite(vals).filter((v) => v >= r.clamp[0] && v <= r.clamp[1]);
     let lo = r.zero ? 0 : Math.min(...seen, r.thr ?? Infinity), hi = Math.max(...seen, r.thr ?? -Infinity, r.zero ? 1 : -Infinity);
+    // brief bolus rates (often 10x the infusion) would flatten the infusion itself to the floor
+    const sorted = r.cls === "drug" && [...seen].sort((a, b) => a - b), cut = sorted && Math.max(1, sorted[Math.floor(sorted.length * 0.98)]);
+    const clipped = cut && hi > cut;
+    if (clipped) hi = cut;
     if (r.risk) [lo, hi] = [0, 1];
-    const tk = ticks(lo, hi, r.h > 90 ? 4 : r.h >= 80 ? 3 : 2);
-    lo = Math.min(lo, tk[0]); hi = Math.max(hi, tk[tk.length - 1]);
-    const y = lin(lo, hi, r.y0 + r.h, r.y0);
-    g.push(s("text", { class: "title", x: ML, y: r.y0 - 6 }, r.label));
+    const n = r.h > 90 ? 4 : r.h >= 80 ? 3 : 2, st = niceStep(lo, hi || 1, n);
+    [lo, hi] = [Math.floor(lo / st) * st, Math.ceil(hi / st) * st || 1];
+    const tk = ticks(lo, hi, n), y = lin(lo, hi, r.y0 + r.h, r.y0);
+    g.push(s("text", { class: "title", x: ML, y: r.y0 - 6 }, r.label, clipped ? s("tspan", { class: "row-sub" }, "  (brief peaks run off the top)") : null));
     for (const v of tk) {
       g.push(s("line", { class: "grid", x1: ML, x2: W - MR, y1: y(v), y2: y(v) }));
       g.push(s("text", { x: ML - 6, y: y(v) + 4, "text-anchor": "end" }, r.risk ? `${v * 100}` : `${v}`));
@@ -252,8 +258,9 @@ function caseChart(c, W, readout) {
     if (step) { e.preventDefault(); show((at < 0 ? 0 : at) + (e.shiftKey ? step * 10 : step)); }
     if (e.key === "Home" || e.key === "End") { e.preventDefault(); show(e.key === "Home" ? 0 : T.length - 1); }
   });
-  const ev = c.events || [];
+  const ev = c.events || [], missing = PANELS.filter((p) => !panels.includes(p)).map((p) => SIGNALS[p.key]);
   return h("div", { class: "chart" }, svg, h("ul", { class: "vh" }, summary.map((t) => h("li", {}, t))),
+    missing.length ? h("p", { class: "note" }, `Not recorded in this surgery: ${missing.join(", ")}.`) : null,
     c.events ? h("p", { class: "note" }, ev.length ? `Shaded: labelled events (${ev.map((e) => `${e.type} ${fmt(e.onset_min, 1)}–${fmt(e.end_min, 1)} min`).join("; ")}).` : "No labelled events in this surgery.",
       risks.length ? " In the risk panels the dashed line is the alert threshold and triangles mark alerts." : null) : null);
 }

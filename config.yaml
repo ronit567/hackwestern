@@ -30,7 +30,8 @@ tracks:
     des: Primus/EXP_DES
     mac: Primus/MAC
     ppf_rate: Orchestra/PPF20_RATE
-    rftn_rate: [Orchestra/RFTN20_RATE, Orchestra/RFTN50_RATE]
+    rftn_rate: Orchestra/RFTN20_RATE      # mL/h of 20 ug/mL
+    rftn50_rate: Orchestra/RFTN50_RATE    # mL/h of 50 ug/mL; kept separate so clean.py can convert both to ug/h
     phen_rate: Orchestra/PHEN_RATE
     nepi_rate: Orchestra/NEPI_RATE
     bis: BIS/BIS

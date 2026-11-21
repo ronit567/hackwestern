@@ -154,7 +154,8 @@ async function drawCase() {
   else if (c.split === "train") notes.push(h("p", { class: "note" }, "This is a training surgery, so its risk curves are out-of-fold predictions."));
   const readout = h("p", { class: "readout", "aria-live": "polite" }, "Point at the chart, or focus it and use the arrow keys, to read values.");
   view.replaceChildren(
-    h("p", { class: "who" }, `${who}. ${d.department || ""}${d.opname ? `: ${d.opname}` : ""}${d.optype ? ` (${d.optype})` : ""}.`),
+    h("p", { class: "who" }, `${who}. ${d.department || ""}${d.opname ? `: ${d.opname}` : ""}${d.optype ? ` (${d.optype})` : ""}.`,
+      c.split ? ` In the ${{ train: "training", val: "validation", test: "test" }[c.split] || c.split} split.` : null),
     ...notes, readout, caseChart(c, view.clientWidth, readout), alertList(c) || "");
 }
 

@@ -398,24 +398,26 @@ function metricsSection() {
 }
 
 function reliability(title, sub, pts, D, size) {
-  const M = 34, x = lin(0, D, M, size - 8), y = lin(0, D, size - M + 8, 8);
-  const tk = ticks(0, D, 2), g = [];
+  const ML = 44, MB = 40, x = lin(0, D, ML, size - 8), y = lin(0, D, size - MB, 8);
+  const tk = [...new Set([...ticks(0, D, 2), D])], g = []; // D too, so the top of each axis has a number
   for (const v of tk) {
     g.push(s("line", { class: "grid", x1: x(v), x2: x(v), y1: y(0), y2: y(D) }), s("line", { class: "grid", x1: x(0), x2: x(D), y1: y(v), y2: y(v) }));
-    g.push(s("text", { x: x(v), y: y(0) + 16, "text-anchor": "middle" }, fmt(v * 100)), s("text", { x: x(0) - 5, y: y(v) + 4, "text-anchor": "end" }, fmt(v * 100)));
+    g.push(s("text", { x: x(v), y: y(0) + 16, "text-anchor": "middle" }, prob(v)), s("text", { x: x(0) - 5, y: y(v) + 4, "text-anchor": "end" }, prob(v)));
   }
+  g.push(s("text", { x: (x(0) + x(D)) / 2, y: size - 4, "text-anchor": "middle" }, "Predicted, %"),
+    s("text", { transform: `translate(12 ${(y(0) + y(D)) / 2}) rotate(-90)`, "text-anchor": "middle" }, "Observed, %"));
   g.push(s("line", { class: "thr", x1: x(0), y1: y(0), x2: x(D), y2: y(D) }));
   g.push(s("path", { class: "line s-risk", d: pathD(pts.map((p) => p.p), pts.map((p) => Math.min(p.obs, D)), x, y) }));
   for (const p of pts) g.push(s("circle", { class: "rel-pt", cx: x(p.p), cy: y(Math.min(p.obs, D)), r: 3.5 },
     s("title", {}, `Predicted ${prob(p.p, " %")}, observed ${prob(p.obs, " %")}, ${fmt(p.n)} times`)));
-  return h("figure", { class: "rel" }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
+  return h("figure", { class: "rel", style: `width:${size}px` }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
     s("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" }, g),
     h("div", { class: "vh" }, h("table", {}, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
       pts.map((p) => h("tr", {}, h("td", {}, prob(p.p, " %")), h("td", {}, prob(p.obs, " %")), h("td", {}, fmt(p.n)))))));
 }
 
 function calibration(W) {
-  const H = HH(), out = [h("p", {}, `Predicted against observed risk of an onset in the next ${H} minutes, in bins of predicted risk, both in %. Points on the dashed diagonal are well calibrated; points below it mean the model overstates risk.`)];
+  const H = HH(), out = [h("p", {}, `Observed against predicted risk of an onset in the next ${H} minutes, in bins of predicted risk, both in %. Points on the dashed diagonal are well calibrated; points below it mean the model overstates risk.`)];
   const size = Math.max(150, Math.min(230, Math.floor((W - 48) / 3)));
   for (const [ev, byH] of Object.entries(metrics.reliability || {})) {
     const byM = byH[H] || {}, all = Object.values(byM).flat();

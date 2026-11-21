@@ -52,8 +52,9 @@ def test_case_files_match_source(out):
 
 def test_cohort_json(out):
     coh = load(out / "cohort.json")
-    n = len([p for p in RAW.glob("[0-9][0-9][0-9][0-9].parquet")])
-    assert coh["n_cached"] == n <= coh["n_cohort"]
+    n = coh["n_cached"]
+    # <= not ==: download.py may add cases while this test runs
+    assert 0 < n <= len(list(RAW.glob("[0-9][0-9][0-9][0-9].parquet"))) and n <= coh["n_cohort"]
     assert sum(coh["sex"].values()) == sum(coh["asa"].values()) == coh["emergency"]["of"] == n
     assert {s["name"] for s in coh["signals"]} >= set(SERIES)
     assert all(0 <= s["pct_time"] <= s["pct_cases"] <= 100 for s in coh["signals"])

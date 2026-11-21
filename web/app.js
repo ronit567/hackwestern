@@ -35,7 +35,9 @@ function s(tag, attrs, ...kids) {
   return el;
 }
 const fill = (id, ...nodes) => document.querySelector(`#${id} .body`).replaceChildren(...nodes.flat(9).filter((n) => n != null));
-const empty = (what, cmd) => h("p", { class: "empty" }, `${what} Run `, h("code", {}, cmd), " to fill it.");
+// each word of a command is unbreakable so "-m" never splits from "python" on a phone
+const empty = (what, cmd) => h("p", { class: "empty" }, `${what} Run `,
+  h("code", {}, cmd.split(" ").map((w, i) => [i ? " " : null, h("span", { class: "nw" }, w)])), " to fill it.");
 const fmt = (v, d = 0) => (v == null ? "n/a" : v.toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const pct = (v, d = 0) => (v == null ? "n/a" : `${fmt(v * 100, d)} %`);
 const counts = (o, name = (k) => k, sortByKey) =>

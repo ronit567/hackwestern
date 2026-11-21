@@ -355,7 +355,7 @@ function metricsSection() {
   const ab = metrics.ablation || {};
   fill("metrics",
     h("p", {}, "Every eligible prediction time, every 30 s. Intervals are 95 % patient-bootstrap CIs. Brier score: lower is better."),
-    h("p", { class: "pick" }, box, h("label", { for: "excl-flagged" }, "Leave out times within 5 min after an event ended")),
+    h("p", { class: "check" }, box, h("label", { for: "excl-flagged" }, "Leave out times within 5 min after an event ended")),
     tables,
     Object.keys(ab).length ? [
       h("h3", {}, "Drug-feature ablation"),
@@ -400,15 +400,15 @@ function calibration(W) {
   fill("calibration", out.length > 1 ? out : empty("Reliability curves not computed.", RUN.evaluate));
 }
 
-const ALERT = [["alarms_per_hour", "Alarms per hour", 1], ["false_per_true_alarm", "False alarms per true alarm", 1],
-  ["median_lead_min", "Median lead, min", 1], ["pct_warned_5min", "Events warned 5 min or more ahead, %", 0, true],
-  ["event_recall", "Events with an alert in the 10 min before onset, %", 0, true]];
+const ALERT = [["alarms_per_hour", "Alarms per hour", 1], ["false_per_true_alarm", "False per true alarm", 1],
+  ["median_lead_min", "Median lead, min", 1], ["pct_warned_5min", "Warned 5+ min ahead, %", 0, true],
+  ["event_recall", "Event recall, %", 0, true]];
 
 function alertsSection() {
   const H = HH(), a = metrics.alerts || {};
   const out = [h("p", {}, `An alert fires when a model's ${H}-minute risk crosses its threshold, then stays quiet for 5 minutes unless the risk rises further. `,
     a.chosen_on ? `Each threshold was chosen on the ${a.chosen_on === "val" ? "validation" : a.chosen_on} split so that every model alarms about ${fmt(a.alarms_per_hour_target, 1)} times per hour, which keeps the comparison fair. ` : null,
-    "Repeat alarms within 5 minutes count once.")];
+    "Event recall is the share of events with an alert in the 10 minutes before onset; repeat alarms within 5 minutes count once.")];
   for (const [ev, byH] of Object.entries(metrics.overall || {})) {
     const byM = byH[H] || {};
     out.push(h("div", { class: "scroll" }, h("table", { class: "metrics" }, h("caption", {}, cap(ev)),

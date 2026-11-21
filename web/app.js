@@ -396,7 +396,7 @@ const cell = (m, d = 2, asPct) => h("td", {}, ciText(m, d, asPct ? (v) => fmt(v 
 function evTable(ev, ...kids) {
   const n = metrics.n?.[ev];
   return block(ev, evHead(ev),
-    h("p", { class: "note" }, n ? `${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times.` : null,
+    h("p", { class: "note" }, fake(ev) ? h("span", { class: "ill-tag" }, `${ILL}: `) : null, n ? `${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times.` : null,
       h("span", { class: "scroll-hint" }, " Scroll the table sideways for more columns.")),
     h("div", { class: "scroll" }, h("table", { class: "metrics" },
       fake(ev) ? h("caption", { class: "ill-tag" }, `${cap(ev)}: ${ILL}`) : h("caption", { class: "vh" }, cap(ev)), kids)));
@@ -444,7 +444,7 @@ function reliability(title, sub, pts, D, size, isFake) {
   g.push(s("path", { class: "line s-risk", d: pathD(pts.map((p) => p.p), pts.map((p) => Math.min(p.obs, D)), x, y) }));
   for (const p of pts) g.push(s("circle", { class: "rel-pt", cx: x(p.p), cy: y(Math.min(p.obs, D)), r: 3.5 },
     s("title", {}, `Predicted ${prob(p.p, "\u00a0%")}, observed ${prob(p.obs, "\u00a0%")}, ${fmt(p.n)} times${isFake ? `. ${ILL}` : ""}`)));
-  return h("figure", { class: "rel", style: `width:${size}px` }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
+  return h("figure", { class: "rel", style: `width:${size}px` }, h("figcaption", {}, title, h("span", { class: "note" }, sub, isFake ? h("span", { class: "ill-tag" }, ` (${ILL})`) : null)),
     s("svg", { width: size, height: SH, viewBox: `0 0 ${size} ${SH}`, "aria-hidden": "true" }, g),
     h("div", { class: "vh" }, h("table", {}, h("caption", {}, isFake ? `${title}: ${ILL}` : title), h("tr", {}, h("th", {}, isFake ? `Predicted (${ILL})` : "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
       pts.map((p) => h("tr", {}, h("td", {}, prob(p.p, "\u00a0%")), h("td", {}, prob(p.obs, "\u00a0%")), h("td", {}, fmt(p.n)))))));

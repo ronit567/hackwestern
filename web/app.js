@@ -161,9 +161,9 @@ async function drawCase() {
 
 function caseChart(c, W, readout) {
   const ML = 40, MR = 12, TOP = 30, GAP = 26;
-  const T = c.t_min, tMax = Math.max(c.duration_min || 0, T[T.length - 1] || 1);
-  // anestart can precede casestart (negative minutes), so the axis starts at the earliest marker
-  const t0 = Math.min(0, ...Object.values(c.phases_min).filter((v) => v != null));
+  // anestart can precede casestart and aneend follow caseend, so the axis spans every marker
+  const marks = Object.values(c.phases_min).filter((v) => v != null);
+  const T = c.t_min, tMax = Math.max(c.duration_min || 0, T[T.length - 1] || 1, ...marks), t0 = Math.min(0, ...marks);
   const x = lin(t0, tMax, ML, W - MR);
   const panels = PANELS.filter((p) => finite(c.series[p.key]).length);
   const risks = Object.entries(c.risk || {});

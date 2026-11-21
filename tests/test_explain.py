@@ -29,6 +29,7 @@ def test_template_text():
     assert describe("spo2_slope_3m", -0.8).startswith("SpO2 falling 0.8%/min")
     assert describe("phase", 3) == "emergence phase"
     assert describe("not_a_feature_x", 2) == "not a feature x 2"
+    assert describe("bt", np.float32("nan")) == "temperature: no recent data"
 
 
 def _fake(tmp_path, n=200):

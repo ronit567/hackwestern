@@ -17,7 +17,7 @@ import xgboost as xgb
 
 from orew import CFG, PROCESSED
 
-EVENTS = list(CFG["events"])
+EVENTS = ["hypotension", "hypoxemia"]  # CFG["events"] also holds max_artifact_frac
 HORIZONS = CFG["windows"]["horizons_min"]
 HEAD = CFG["windows"]["headline_horizon_min"]
 K = 3
@@ -114,10 +114,11 @@ def _template(name):
 
 def describe(name, v):
     """Plain-language string for feature `name` at its current value `v`."""
-    if v is None or (isinstance(v, float) and math.isnan(v)):
-        return f"{name.replace('_', ' ')}: no recent data"
-    v = float(v)
+    v = math.nan if v is None else float(v)  # float() first: numpy float32 NaN is not a Python float
     m, f = _template(name)
+    if math.isnan(v):
+        lab = SIGNALS[m["sig"]][0] if m and "sig" in m.re.groupindex else name.replace("_", " ")
+        return f"{lab}: no recent data"
     return f(m, v) if f else f"{name.replace('_', ' ')} {num(v)}"
 
 

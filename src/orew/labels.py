@@ -111,8 +111,65 @@ def summary(ev, pt):
         print("  onsets by phase:", pd.Series(phase).value_counts(normalize=True).round(3).to_dict())
 
 
+def plot_events(n):
+    """n random events (half per type, fixed seed), +-15 min around onset, from the saved outputs."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ev, pt = pd.read_parquet(PROCESSED / "events.parquet"), pd.read_parquet(PROCESSED / "pred_table.parquet")
+    cases = pd.read_csv(RAW / "cases.csv").set_index("caseid")
+    rng = np.random.default_rng(CFG["seed"])
+    pick = pd.concat([x.iloc[rng.choice(len(x), min(n // len(EV), len(x)), replace=False)] for _, x in ev.groupby("event")])
+    out = REPORTS / "phase2"
+    out.mkdir(parents=True, exist_ok=True)
+    ylim = {"map": (0, 210), "spo2": (45, 101)}
+    for r in pick.itertuples():
+        s, thr = EV[r.event]["signal"], EV[r.event]["threshold"]
+        raw = pd.read_parquet(RAW / f"{r.caseid:04d}.parquet")
+        g = pd.read_parquet(PROCESSED / "grid" / f"{r.caseid:04d}.parquet")
+        w = ((g.t_sec - r.onset_sec).abs() <= 900).to_numpy()
+        m = (g.t_sec[w] - r.onset_sec) / 60
+        fig, ax = plt.subplots(2, 1, figsize=(12, 6), sharex=True, height_ratios=[3, 1])
+        ax[0].plot(m, raw[s][w].clip(*ylim[s]), color="0.65", lw=1, label="raw (clipped to axis)")
+        ax[0].plot(m, g[s][w], color="#2a78d6", lw=1.2, label="cleaned")
+        a = w & g[f"art_{s}"].to_numpy()
+        ax[0].plot((g.t_sec[a] - r.onset_sec) / 60, g[f"{s}_raw"][a].clip(*ylim[s]), "x", color="#d62728", ms=4, label="artifact")
+        ax[0].axhline(thr, color="k", ls="--", lw=0.8)
+        for o in ev[(ev.caseid == r.caseid) & (ev.event == r.event)].itertuples():
+            ax[0].axvspan((o.onset_sec - r.onset_sec) / 60, (o.end_sec + STEP - r.onset_sec) / 60, color="#d62728", alpha=0.12)
+        p = pt.t_sec[(pt.caseid == r.caseid) & pt[f"eligible_{r.event}"] & (pt.t_sec < r.onset_sec)]
+        if len(p):
+            t = (p.iat[-1] - r.onset_sec) / 60
+            ax[0].axvspan(t - 10, t, ymax=0.04, color="#2a78d6", alpha=0.5, label=f"input window, last eligible t = {t:+.1f} min")
+            ax[0].axvspan(t, t + 10, ymax=0.04, color="#eb6834", alpha=0.5, label="10 min label window")
+        if s == "map":
+            ax[1].plot(m, (raw.sbp - raw.dbp)[w], color="0.3", lw=0.8)
+            ax[1].axhline(CFG["artifact"]["pulse_pressure_min"], color="k", ls="--", lw=0.8)
+            ax[1].set_ylabel("monitor SBP-DBP")
+        else:
+            ax[1].plot(m, raw.pleth_amp[w], color="0.3", lw=0.8)
+            ax[1].set_ylabel("pleth amplitude")
+        for k in ("anestart", "opstart", "opend", "aneend"):
+            x = (cases.at[r.caseid, k] - r.onset_sec) / 60
+            if abs(x) <= 15:
+                for b in ax:
+                    b.axvline(x, color="0.4", ls=":", lw=0.8)
+                ax[0].text(x, 1.01, k, transform=ax[0].get_xaxis_transform(), ha="center", fontsize=8)
+        ax[0].set_ylim(*ylim[s])
+        ax[0].set_ylabel(s)
+        ax[0].legend(loc="lower left", fontsize=7, frameon=False, ncol=3)
+        ax[1].set_xlabel("minutes from onset")
+        fig.suptitle(f"case {r.caseid} {r.event}: onset {r.onset_sec / 60:.1f} min, {r.duration_s} s, artifact {r.artifact_frac:.0%}", y=0.995)
+        fig.tight_layout()
+        fig.savefig(out / f"event_{r.caseid}_{r.event}_{r.onset_sec}.png", dpi=90)
+        plt.close(fig)
+    print(f"{len(pick)} plots -> {out}")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--plot-events", type=int, metavar="N", help="plot N random events from the saved outputs")
     args = ap.parse_args()
-    build()
+    plot_events(args.plot_events) if args.plot_events else build()

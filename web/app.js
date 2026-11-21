@@ -233,8 +233,6 @@ function caseChart(c, W, readout) {
   const svg = s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, tabindex: 0, role: "img",
     "aria-label": `Vital signs over ${fmt(tMax)} minutes of surgery ${c.caseid}. ${summary.join(" ")} Use the left and right arrow keys to read values.` },
   g, cursor);
-  const hit = s("rect", { x: ML, y: 0, width: W - MR - ML, height: H, fill: "transparent" });
-  svg.append(hit);
   let at = -1;
   const show = (i) => {
     at = Math.max(0, Math.min(T.length - 1, i));
@@ -253,7 +251,9 @@ function caseChart(c, W, readout) {
   };
   const nearest = (t) => { let i = T.findIndex((u) => u >= t); return i < 0 ? T.length - 1 : i; };
   const toT = (px) => t0 + ((px - ML) / (W - MR - ML)) * (tMax - t0);
-  hit.addEventListener("pointermove", (e) => show(nearest(toT(e.clientX - svg.getBoundingClientRect().left))));
+  // on the svg itself, not a hit rect over it, so the marks' <title> tooltips stay reachable; pointerdown for taps
+  for (const type of ["pointermove", "pointerdown"])
+    svg.addEventListener(type, (e) => show(nearest(toT(e.clientX - svg.getBoundingClientRect().left))));
   svg.addEventListener("keydown", (e) => {
     const step = { ArrowRight: 6, ArrowLeft: -6, PageDown: 60, PageUp: -60 }[e.key]; // 6 bins = 1 min
     if (step) { e.preventDefault(); show((at < 0 ? 0 : at) + (e.shiftKey ? step * 10 : step)); }

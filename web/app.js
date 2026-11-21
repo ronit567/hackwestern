@@ -39,7 +39,7 @@ const fill = (id, ...nodes) => document.querySelector(`#${id} .body`).replaceChi
 const empty = (what, cmd) => h("p", { class: "empty" }, `${what} Run `,
   h("code", {}, cmd.split(" ").map((w, i) => [i ? " " : null, h("span", { class: "nw" }, w)])), " to fill it.");
 const fmt = (v, d = 0) => (v == null ? "n/a" : v.toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d }));
-const pct = (v, d = 0) => (v == null ? "n/a" : `${fmt(v * 100, d)} %`);
+const pct = (v, d = 0) => (v == null ? "n/a" : `${fmt(v * 100, d)}\u00a0%`); // no-break space: "%" never wraps alone
 // a probability in %, to 2 significant digits: hypoxemia risks sit well below 1 %
 const prob = (v, unit = "") => (v == null ? "n/a" : (v * 100).toLocaleString("en", { maximumSignificantDigits: 2 }) + unit);
 const counts = (o, name = (k) => k, sortByKey) =>
@@ -228,7 +228,7 @@ function caseChart(c, W, readout) {
       c.series.nibp_map.forEach((v, i, a) => v != null && v !== a[i - 1] && inner.push(s("circle", { class: "nibp", cx: x(T[i]), cy: y(v), r: 3 })));
     for (const a of (c.alerts || []).filter((a) => r.risk && a.type === r.ev))
       inner.push(s("path", { class: "alert", d: `M${x(a.t_min)},${r.y0 + 9}l-5,-9h10z` }, s("title", {}, `Alert at ${fmt(a.t_min, 1)} min`)));
-    if (thr != null) inner.push(s("text", { class: "thr-label", x: W - MR - 4, y: y(thr) - 4, "text-anchor": "end" }, r.risk ? `alert at ${prob(thr, " %")}` : `${thr} ${r.unit}`));
+    if (thr != null) inner.push(s("text", { class: "thr-label", x: W - MR - 4, y: y(thr) - 4, "text-anchor": "end" }, r.risk ? `alert at ${prob(thr, "\u00a0%")}` : `${thr} ${r.unit}`));
     g.push(s("g", { "clip-path": `url(#${clip})` }, inner));
     const f = r.risk ? prob : fmt;
     summary.push(`${r.label}: ${seen.length ? `median ${f(median(seen))}, range ${f(Math.min(...seen))} to ${f(Math.max(...seen))}` : "no data"}.`);
@@ -250,7 +250,7 @@ function caseChart(c, W, readout) {
     }
     for (const [ev, r] of risks) {
       let j = r.t_min.findLastIndex((u) => u <= t);
-      if (j >= 0 && r.p10[j] != null) parts.push(`${ev} 10 min risk ${prob(r.p10[j], " %")}`);
+      if (j >= 0 && r.p10[j] != null) parts.push(`${ev} 10 min risk ${prob(r.p10[j], "\u00a0%")}`);
     }
     readout.textContent = parts.join(", ");
     cursor.setAttribute("x1", x(t)); cursor.setAttribute("x2", x(t)); cursor.setAttribute("visibility", "visible");
@@ -275,7 +275,7 @@ function caseChart(c, W, readout) {
 function alertList(c) {
   if (!c.alerts?.length) return null;
   return h("div", {}, h("h3", {}, "Alerts in this surgery"), h("ul", { class: "alerts" }, c.alerts.map((a) =>
-    h("li", {}, h("strong", {}, `${fmt(a.t_min, 1)} min, ${a.type}`), `: 10 min risk ${prob(a.p10, " %")}, led by the ${a.lead_specialist} model. `,
+    h("li", {}, h("strong", {}, `${fmt(a.t_min, 1)} min, ${a.type}`), `: 10 min risk ${prob(a.p10, "\u00a0%")}, led by the ${a.lead_specialist} model. `,
       `Drivers: ${(a.top_drivers || []).join("; ")}.`))));
 }
 
@@ -409,11 +409,11 @@ function reliability(title, sub, pts, D, size) {
   g.push(s("line", { class: "thr", x1: x(0), y1: y(0), x2: x(D), y2: y(D) }));
   g.push(s("path", { class: "line s-risk", d: pathD(pts.map((p) => p.p), pts.map((p) => Math.min(p.obs, D)), x, y) }));
   for (const p of pts) g.push(s("circle", { class: "rel-pt", cx: x(p.p), cy: y(Math.min(p.obs, D)), r: 3.5 },
-    s("title", {}, `Predicted ${prob(p.p, " %")}, observed ${prob(p.obs, " %")}, ${fmt(p.n)} times`)));
+    s("title", {}, `Predicted ${prob(p.p, "\u00a0%")}, observed ${prob(p.obs, "\u00a0%")}, ${fmt(p.n)} times`)));
   return h("figure", { class: "rel", style: `width:${size}px` }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
     s("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" }, g),
     h("div", { class: "vh" }, h("table", {}, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
-      pts.map((p) => h("tr", {}, h("td", {}, prob(p.p, " %")), h("td", {}, prob(p.obs, " %")), h("td", {}, fmt(p.n)))))));
+      pts.map((p) => h("tr", {}, h("td", {}, prob(p.p, "\u00a0%")), h("td", {}, prob(p.obs, "\u00a0%")), h("td", {}, fmt(p.n)))))));
 }
 
 function calibration(W) {

@@ -5,6 +5,7 @@ simulator (models/threshold.json): train from the cross-fitted OOF preds, val, t
 """
 import argparse
 import json
+import math
 
 import numpy as np
 import pandas as pd
@@ -70,13 +71,17 @@ def load_risk(ids, processed=PROCESSED, lock=LOCK):
     frames, drivers = [], {}
     for k, p in src.items():
         d = pd.read_parquet(p, columns=[c for c in want if c in pq.read_schema(p).names], filters=[("caseid", "in", list(ids))])
-        frames.append(d[d.split == k])  # a case is scored only from its own split's file
+        frames.append(d := d[d.split == k])  # a case is scored only from its own split's file
         rf = processed / f"records_{k}.jsonl"  # explain.py writes val / test only, so train alerts have no drivers
-        if rf.exists() and rf.stat().st_mtime >= p.stat().st_mtime:  # older records belong to an older model
-            for line in rf.open():
-                r = json.loads(line)
-                if r["caseid"] in ids:
-                    drivers[r["caseid"], r["t_sec"]] = {e: r[e] and r[e]["top_drivers_text"] for e in EVENTS}
+        recs = [r for r in map(json.loads, rf.open()) if r["caseid"] in ids] if rf.exists() else []
+        # fresh = records' p10 matches these preds (not mtimes: `models --test` rewrites the same val preds)
+        pp = {e: dict(zip(zip(d.caseid, d.t_sec), d[f"p_fusion_{e}_{HH}"])) for e in EVENTS}
+        if all(math.isclose(r[e]["p10"], pp[e].get((r["caseid"], r["t_sec"]), math.nan), rel_tol=1e-3, abs_tol=1e-6)
+               for r in recs for e in EVENTS if r[e]):
+            drivers |= {(r["caseid"], r["t_sec"]): {e: r[e] and r[e]["top_drivers_text"] for e in EVENTS} for r in recs}
+        else:
+            print(f"warning: {rf.name} is from an older model, {k} alerts get no drivers; "
+                  f"run `uv run python -m orew.explain --split {k}`, then export again")
     d = pd.concat(frames).sort_values(["caseid", "t_sec"])
     return dict(tuple(d.groupby("caseid"))), drivers, {e: float(thr[e]["threshold"]) for e in EVENTS}
 

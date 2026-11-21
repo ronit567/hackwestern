@@ -116,8 +116,9 @@ def test_risk_and_alerts_match_preds_and_evaluate(out):
             assert a["top_drivers"] is None or all(isinstance(x, str) for x in a["top_drivers"])
 
 
-def test_test_split_risk_needs_lock(tmp_path):
-    """Synthetic processed dir: test-split preds are used only with the lock."""
+def test_load_risk_gates_test_split_and_stale_records(tmp_path):
+    """Synthetic processed dir: test-split preds are used only with the lock; records drive alerts only while their
+    p10 matches the preds."""
     (tmp_path / "models").mkdir()
     (tmp_path / "models" / "threshold.json").write_text(json.dumps({e: {"threshold": 0.5, "chosen_on": "val"} for e in EVENTS}))
     for f, split, c in [("preds_oof", "train", 1), ("preds_val", "val", 2), ("preds_test", "test", 3)]:
@@ -130,6 +131,9 @@ def test_test_split_risk_needs_lock(tmp_path):
     assert set(by_case) == {1, 2} and drivers[2, 600]["hypotension"] == ["a", "b", "c"]
     lock.touch()
     assert set(load_risk({1, 2, 3}, tmp_path, lock)[0]) == {1, 2, 3}
+    rec["hypotension"]["p10"] = 0.3  # records from an older model
+    (tmp_path / "records_val.jsonl").write_text(json.dumps(rec) + "\n")
+    assert load_risk({2}, tmp_path, lock)[1] == {}
 
 
 def test_page_script_parses():

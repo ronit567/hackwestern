@@ -1,10 +1,12 @@
 import json
 import math
+import shutil
+import subprocess
 
 import pandas as pd
 import pytest
 
-from orew import RAW
+from orew import RAW, ROOT
 from orew.export import PHASES, SERIES, STEP, export
 
 
@@ -55,3 +57,10 @@ def test_cohort_json(out):
     assert sum(coh["sex"].values()) == sum(coh["asa"].values()) == coh["emergency"]["of"] == n
     assert {s["name"] for s in coh["signals"]} >= set(SERIES)
     assert all(0 <= s["pct_time"] <= s["pct_cases"] <= 100 for s in coh["signals"])
+
+
+def test_page_script_parses():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    subprocess.run([node, "--check", str(ROOT / "web" / "app.js")], check=True)

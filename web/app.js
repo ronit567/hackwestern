@@ -9,7 +9,15 @@ if (q.get("theme")) document.documentElement.dataset.theme = q.get("theme");
 const RUN = {
   export: "uv run python -m orew.export",
   evaluate: "uv run python -m orew.evaluate --split val",
+  illustrative: "uv run python -m orew.illustrative",
 };
+// ?illustrative=1 swaps in MADE-UP hypoxemia numbers (web/illustrative_hypoxemia.json) to show the layout with more
+// events. Every hypoxemia block, chart, table and tooltip then carries ILL; hypotension always stays real.
+const ILL = "ILLUSTRATIVE — NOT A REAL RESULT";
+const EVENTS = ["hypotension", "hypoxemia"];
+const BLOCKS = ["n", "overall", "overall_excl_flagged", "bins", "bins_excl_flagged", "subgroups", "reliability", "ablation"];
+let ill = null, realN, realSplit; // the file, once loaded and checked; the real hypoxemia counts it replaced
+const fake = (ev) => !!ill && ev === "hypoxemia";
 const SIGNALS = {
   map: "Arterial MAP", sbp: "Arterial systolic", dbp: "Arterial diastolic", nibp_map: "Cuff MAP (NIBP)",
   hr: "Heart rate", spo2: "SpO2", etco2: "End-tidal CO2", rr: "Respiratory rate", fio2: "FiO2",
@@ -46,9 +54,9 @@ const counts = (o, name = (k) => k, sortByKey) =>
   Object.entries(o).sort(sortByKey ? (a, b) => a[0].localeCompare(b[0]) : (a, b) => b[1] - a[1])
     .map(([k, n]) => `${name(k)}: ${n}`).join(", ");
 
-async function get(path) {
+async function get(path, base = DATA) {
   try {
-    const r = await fetch(DATA + path);
+    const r = await fetch(base + path);
     return r.ok ? await r.json() : null;
   } catch {
     return null;
@@ -292,12 +300,12 @@ const ciText = (m, d = 2, f = (v) => fmt(v, d)) =>
 const HH = () => String(metrics.headline_horizon_min);
 
 // Rows of [label, sub, final, baseline] intervals on one shared x scale: filled circle = final model, open = baseline 1.
-function dumbbell(title, rows, W, ciPair) {
-  const ML = 8, MR = 16, RH = 46, TOP = 22;
+function dumbbell(title, rows, W, ciPair, isFake) {
+  const ML = 8, MR = 16, RH = 46, off = isFake ? 18 : 0, TOP = 22 + off;
   const all = rows.flatMap((r) => [r.a, r.b]).filter(Boolean).flatMap((m) => m.slice(0, 3));
   const lo = Math.floor(Math.min(...all) * 10) / 10, hi = Math.min(1, Math.ceil(Math.max(...all) * 10) / 10);
   const x = lin(lo, hi, ML, W - MR), H = TOP + rows.length * RH + 22;
-  const g = [s("text", { class: "title", x: ML, y: 12 }, title)];
+  const g = [isFake ? illMark(W, H, ML, 12) : null, s("text", { class: "title", x: ML, y: 12 + off }, title)];
   for (const v of ticks(lo, hi, W < 400 ? 3 : 5)) {
     g.push(s("line", { class: "grid", x1: x(v), x2: x(v), y1: TOP, y2: H - 20 }));
     g.push(s("text", { x: x(v), y: H - 4, "text-anchor": "middle" }, fmt(v, 2)));
@@ -308,13 +316,13 @@ function dumbbell(title, rows, W, ciPair) {
     for (const [m, dy, cls, who] of [[r.b, 24, "mk-base", ciPair[1]], [r.a, 36, "mk-final", ciPair[0]]]) {
       if (!m) continue;
       g.push(s("g", { class: cls },
-        s("title", {}, `${who}: ${fmt(m[0], 3)} (95 % CI ${fmt(m[1], 3)}–${fmt(m[2], 3)})`),
+        s("title", {}, `${who}: ${fmt(m[0], 3)} (95 % CI ${fmt(m[1], 3)}–${fmt(m[2], 3)})${isFake ? `. ${ILL}` : ""}`),
         s("line", { x1: x(m[1]), x2: x(m[2]), y1: y + dy, y2: y + dy }),
         s("circle", { cx: x(m[0]), cy: y + dy, r: 4.5 })));
     }
   });
-  const table = h("div", { class: "vh" }, h("table", {}, h("caption", {}, title),
-    h("tr", {}, h("th", {}, "Group"), h("th", {}, ciPair[0]), h("th", {}, ciPair[1])),
+  const table = h("div", { class: "vh" }, h("table", {}, h("caption", {}, isFake ? `${title}: ${ILL}` : title),
+    h("tr", {}, h("th", {}, isFake ? `Group (${ILL})` : "Group"), h("th", {}, ciPair[0]), h("th", {}, ciPair[1])),
     rows.map((r) => h("tr", {}, h("th", {}, `${r.label} ${r.sub || ""}`), h("td", {}, ciText(r.a, 3)), h("td", {}, ciText(r.b, 3))))));
   return h("figure", { class: "dumbbell" }, s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true" }, g), table);
 }
@@ -322,6 +330,30 @@ function dumbbell(title, rows, W, ciPair) {
 const legend = () => h("p", { class: "legend" },
   h("span", { class: "key key-final", "aria-hidden": "true" }), `${modelName(metrics.final_model)}  `,
   h("span", { class: "key key-base", "aria-hidden": "true" }), `${MODEL.baseline1}. Bars are 95 % confidence intervals from ${fmt(metrics.bootstrap)} patient bootstrap resamples.`);
+
+let illN = 0;
+// stripes and the label drawn inside the svg itself, so even a cropped screenshot of one chart carries them
+function illMark(W, H, x, y, lines = [ILL]) {
+  const id = `ill-${++illN}`;
+  return [s("pattern", { id, width: 12, height: 12, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" },
+    s("rect", { class: "ill-stripe", width: 6, height: 12 })),
+  s("rect", { width: W, height: H, fill: `url(#${id})` }),
+  lines.map((t, i) => s("text", { class: "ill-label", x, y: y + i * 13 }, t))];
+}
+// every per-event block opens here, so neither the illustrative label nor the real small-sample caveat is skipped
+function evHead(ev, title = cap(ev)) {
+  if (fake(ev)) return [h("h3", {}, `${title} `, h("span", { class: "ill-tag" }, ILL)),
+    h("p", { class: "ill-note" }, "Made-up numbers that show what hypoxemia results could look like with more surgeries. No model produced them.",
+      realN ? ` The real ${realSplit === "test" ? "test" : "validation"} split has only ${fmt(realN.events)} hypoxemia events.` : null)];
+  const n = metrics.n?.[ev]?.events;
+  // 100: a few events per value band and subgroup at best, so intervals stay wide
+  return [h("h3", {}, title), ev === "hypoxemia" && !(n >= 100)
+    ? h("p", { class: "note" }, `Only ${n == null ? "a few" : fmt(n)} hypoxemia events in this split — too few for firm conclusions.`) : null];
+}
+const block = (ev, ...kids) => (fake(ev) ? h("div", { class: "ill" }, kids) : kids);
+// with no metrics.json, illustrative mode still says hypotension has no results
+const missing = (src) => (src ? EVENTS.filter((ev) => !src[ev]).map((ev) => [h("h3", {}, cap(ev)), empty("Not computed yet.", RUN.evaluate)]) : []);
+const modelTh = (ev) => h("th", { scope: "col" }, "Model", fake(ev) ? h("span", { class: "ill-tag" }, ` (${ILL})`) : null);
 
 let exclFlagged = false;
 const flagged = (k) => metrics[exclFlagged ? `${k}_excl_flagged` : k];
@@ -337,7 +369,7 @@ function headline(W) {
     h("p", {}, `Discrimination ${H} minutes ahead, inside each band of the current value. Baseline 1 sees only the current number, which says little inside a narrow band. The model has to beat it in every band, including the bands where the number still looks normal.`),
     flagBox("excl-flagged-h")];
   if (!byEv) return fill("headline", out, empty("Value-band results not computed.", RUN.evaluate));
-  out.push(legend());
+  out.push(legend(), ...missing(byEv));
   for (const ev of Object.keys(byEv)) {
     const bins = byEv[ev][H] || [], all = flagged("overall")?.[ev]?.[H] || {};
     const rows = (k) => [{ label: "All times", a: all[fm]?.[k], b: all.baseline1?.[k] },
@@ -345,14 +377,14 @@ function headline(W) {
     const wins = bins.filter((b) => b.models[fm]?.auroc?.[0] > b.models.baseline1?.auroc?.[0]).length;
     const cw = W >= 760 ? (W - 32) / 2 : W;
     const o = all[fm], b1 = all.baseline1;
-    out.push(h("h3", {}, `${cap(ev)}, by current ${SIGNAL_OF[ev]}`),
-      h("p", { class: "verdict" }, `${modelName(fm)} has the higher AUROC in ${wins} of ${bins.length} ${SIGNAL_OF[ev]} bands (point estimates; check the intervals).`,
+    out.push(block(ev, evHead(ev, `${cap(ev)}, by current ${SIGNAL_OF[ev]}`),
+      h("p", { class: "verdict" }, fake(ev) ? `${ILL}: ` : null, `${modelName(fm)} has the higher AUROC in ${wins} of ${bins.length} ${SIGNAL_OF[ev]} bands (point estimates; check the intervals).`,
         o?.median_lead_min && b1?.median_lead_min
           ? ` Events warned in the 10 min before onset ${pct(o.event_recall?.[0])} against ${pct(b1.event_recall?.[0])}; median lead of those warned ${fmt(o.median_lead_min[0], 1)} min against ${fmt(b1.median_lead_min[0], 1)} min; events warned at least 5 min ahead ${pct(o.pct_warned_5min?.[0])} against ${pct(b1.pct_warned_5min?.[0])}.`
           : null),
       h("div", { class: "pair" },
-        dumbbell("AUROC", rows("auroc"), cw, [modelName(fm), MODEL.baseline1]),
-        dumbbell("AUPRC", rows("auprc"), cw, [modelName(fm), MODEL.baseline1])));
+        dumbbell("AUROC", rows("auroc"), cw, [modelName(fm), MODEL.baseline1], fake(ev)),
+        dumbbell("AUPRC", rows("auprc"), cw, [modelName(fm), MODEL.baseline1], fake(ev)))));
   }
   fill("headline", ...out);
 }
@@ -363,21 +395,22 @@ const cell = (m, d = 2, asPct) => h("td", {}, ciText(m, d, asPct ? (v) => fmt(v 
 // heading and sizes sit outside the scroll box, so on a phone they wrap instead of scrolling away with the table
 function evTable(ev, ...kids) {
   const n = metrics.n?.[ev];
-  return [h("h3", {}, cap(ev)),
+  return block(ev, evHead(ev),
     h("p", { class: "note" }, n ? `${fmt(n.events)} events in ${fmt(n.cases)} surgeries (${fmt(n.subjects)} patients), ${fmt(n.times)} prediction times.` : null,
       h("span", { class: "scroll-hint" }, " Scroll the table sideways for more columns.")),
-    h("div", { class: "scroll" }, h("table", { class: "metrics" }, h("caption", { class: "vh" }, cap(ev)), kids))];
+    h("div", { class: "scroll" }, h("table", { class: "metrics" },
+      fake(ev) ? h("caption", { class: "ill-tag" }, `${cap(ev)}: ${ILL}`) : h("caption", { class: "vh" }, cap(ev)), kids)));
 }
 
 function metricTables() {
   const src = flagged("overall");
   if (!src) return [empty("Not computed.", RUN.evaluate)];
-  return Object.entries(src).map(([ev, byH]) => evTable(ev,
-      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), DISC.map(([, l]) => h("th", { scope: "col" }, l)))),
+  return [...missing(src), Object.entries(src).map(([ev, byH]) => evTable(ev,
+      h("thead", {}, h("tr", {}, modelTh(ev), DISC.map(([, l]) => h("th", { scope: "col" }, l)))),
       Object.entries(byH).map(([H, byM]) => h("tbody", {},
         h("tr", { class: "group" }, h("th", { scope: "rowgroup", colspan: DISC.length + 1 }, `${H} minutes ahead`)),
         metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
-          h("th", { scope: "row" }, modelName(m)), DISC.map(([k, , d, p]) => cell(byM[m][k], d ?? 2, p))))))));
+          h("th", { scope: "row" }, modelName(m)), DISC.map(([k, , d, p]) => cell(byM[m][k], d ?? 2, p))))))))];
 }
 
 function metricsSection() {
@@ -390,43 +423,45 @@ function metricsSection() {
       h("h3", {}, "Drug-feature ablation"),
       h("p", { class: "note" }, "The same model trained with and without the infusion and anesthetic-agent features. Vasopressor infusions are rare in this cohort, so this mostly measures propofol and remifentanil."),
       h("div", { class: "scroll" }, h("table", {},
+        ill ? h("caption", { class: "ill-tag" }, `Hypoxemia rows: ${ILL}`) : null,
         h("thead", {}, h("tr", {}, ["Event", "Ahead", "Model", "AUROC with drugs", "AUROC without", "AUPRC with drugs", "AUPRC without"].map((l) => h("th", { scope: "col" }, l)))),
         h("tbody", {}, Object.entries(ab).flatMap(([ev, byH]) => Object.entries(byH).map(([H, a]) =>
-          h("tr", {}, h("th", { scope: "row" }, cap(ev)), h("td", {}, `${H} min`), h("td", {}, MODEL[a.model] || a.model),
+          h("tr", { class: fake(ev) ? "ill-row" : null }, h("th", { scope: "row" }, cap(ev), fake(ev) ? h("span", { class: "ill-tag" }, ` (${ILL})`) : null), h("td", {}, `${H} min`), h("td", {}, MODEL[a.model] || a.model),
             cell(a.with_drugs?.auroc), cell(a.without_drugs?.auroc), cell(a.with_drugs?.auprc), cell(a.without_drugs?.auprc)))))))]
       : h("p", { class: "note" }, "Drug-feature ablation not computed."));
 }
 
-function reliability(title, sub, pts, D, size) {
-  const ML = 44, MB = 40, x = lin(0, D, ML, size - 8), y = lin(0, D, size - MB, 8);
-  const tk = [...new Set([...ticks(0, D, 2), D])], g = []; // D too, so the top of each axis has a number
+function reliability(title, sub, pts, D, size, isFake) {
+  const ML = 44, MB = 40, top = isFake ? 30 : 0, SH = size + top, x = lin(0, D, ML, size - 8), y = lin(0, D, SH - MB, 8 + top);
+  const tk = [...new Set([...ticks(0, D, 2), D])], g = [isFake ? illMark(size, SH, 2, 12, ["ILLUSTRATIVE —", "NOT A REAL RESULT"]) : null]; // D too, so the top of each axis has a number
   for (const v of tk) {
     g.push(s("line", { class: "grid", x1: x(v), x2: x(v), y1: y(0), y2: y(D) }), s("line", { class: "grid", x1: x(0), x2: x(D), y1: y(v), y2: y(v) }));
     g.push(s("text", { x: x(v), y: y(0) + 16, "text-anchor": "middle" }, prob(v)), s("text", { x: x(0) - 5, y: y(v) + 4, "text-anchor": "end" }, prob(v)));
   }
-  g.push(s("text", { x: (x(0) + x(D)) / 2, y: size - 4, "text-anchor": "middle" }, "Predicted, %"),
+  g.push(s("text", { x: (x(0) + x(D)) / 2, y: SH - 4, "text-anchor": "middle" }, "Predicted, %"),
     s("text", { transform: `translate(12 ${(y(0) + y(D)) / 2}) rotate(-90)`, "text-anchor": "middle" }, "Observed, %"));
   g.push(s("line", { class: "thr", x1: x(0), y1: y(0), x2: x(D), y2: y(D) }));
   g.push(s("path", { class: "line s-risk", d: pathD(pts.map((p) => p.p), pts.map((p) => Math.min(p.obs, D)), x, y) }));
   for (const p of pts) g.push(s("circle", { class: "rel-pt", cx: x(p.p), cy: y(Math.min(p.obs, D)), r: 3.5 },
-    s("title", {}, `Predicted ${prob(p.p, "\u00a0%")}, observed ${prob(p.obs, "\u00a0%")}, ${fmt(p.n)} times`)));
+    s("title", {}, `Predicted ${prob(p.p, "\u00a0%")}, observed ${prob(p.obs, "\u00a0%")}, ${fmt(p.n)} times${isFake ? `. ${ILL}` : ""}`)));
   return h("figure", { class: "rel", style: `width:${size}px` }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
-    s("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" }, g),
-    h("div", { class: "vh" }, h("table", {}, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
+    s("svg", { width: size, height: SH, viewBox: `0 0 ${size} ${SH}`, "aria-hidden": "true" }, g),
+    h("div", { class: "vh" }, h("table", {}, h("caption", {}, isFake ? `${title}: ${ILL}` : title), h("tr", {}, h("th", {}, isFake ? `Predicted (${ILL})` : "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
       pts.map((p) => h("tr", {}, h("td", {}, prob(p.p, "\u00a0%")), h("td", {}, prob(p.obs, "\u00a0%")), h("td", {}, fmt(p.n)))))));
 }
 
 function calibration(W) {
   const H = HH(), out = [h("p", {}, `Observed against predicted risk of an onset in the next ${H} minutes, in bins of predicted risk, both in %. Points on the dashed diagonal are well calibrated; points below it mean the model overstates risk.`)];
   const size = Math.max(150, Math.min(230, Math.floor((W - 48) / 3)));
+  out.push(...missing(metrics.reliability));
   for (const [ev, byH] of Object.entries(metrics.reliability || {})) {
     const byM = byH[H] || {}, all = Object.values(byM).flat();
     if (!all.length) continue;
     const D = Math.min(1, Math.ceil(Math.max(...all.flatMap((p) => [p.p, p.obs])) * 10) / 10);
-    out.push(h("h3", {}, cap(ev)), h("div", { class: "rels" }, metrics.models.filter((m) => byM[m]?.length).map((m) => {
+    out.push(block(ev, evHead(ev), h("div", { class: "rels" }, metrics.models.filter((m) => byM[m]?.length).map((m) => {
       const b = metrics.overall?.[ev]?.[H]?.[m]?.brier;
-      return reliability(modelName(m), b ? `Brier ${fmt(b[0], 3)}` : "Brier not computed", byM[m], D, size);
-    })));
+      return reliability(modelName(m), b ? `Brier ${fmt(b[0], 3)}` : "Brier not computed", byM[m], D, size, fake(ev));
+    }))));
   }
   fill("calibration", out.length > 1 ? out : empty("Reliability curves not computed.", RUN.evaluate));
 }
@@ -440,10 +475,11 @@ function alertsSection() {
   const out = [h("p", {}, `An alert fires when a model's ${H}-minute risk crosses its threshold, then stays quiet for 5 minutes unless the risk rises further. `,
     a.chosen_on ? `Each threshold was chosen on the ${a.chosen_on === "val" ? "validation" : a.chosen_on} split so that every model alarms about ${fmt(a.alarms_per_hour_target, 1)} times per hour, which keeps the comparison fair. ` : null,
     "Event recall is the share of events with an alert in the 10 minutes before onset; repeat alarms within 5 minutes count once. Median lead runs from the first such alert and covers warned events only; the 5+ min share is of all events.", " An alarm is true if an onset follows within 10 minutes.")];
+  out.push(...missing(metrics.overall));
   for (const [ev, byH] of Object.entries(metrics.overall || {})) {
     const byM = byH[H] || {};
     out.push(evTable(ev,
-      h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), h("th", { scope: "col" }, "Threshold, %"), ALERT.map(([, l]) => h("th", { scope: "col" }, l)))),
+      h("thead", {}, h("tr", {}, modelTh(ev), h("th", { scope: "col" }, "Threshold, %"), ALERT.map(([, l]) => h("th", { scope: "col" }, l)))),
       h("tbody", {}, metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
         h("th", { scope: "row" }, modelName(m)), h("td", {}, prob(a.threshold?.[ev]?.[m])),
         ALERT.map(([k, , d, p]) => cell(byM[m][k], d, p)))))));
@@ -457,10 +493,11 @@ function subgroups(W) {
   const H = HH(), fm = metrics.final_model, out = [
     h("p", {}, `AUROC ${H} minutes ahead within each patient group. Small groups have wide intervals; read them before reading the dots.`), legend()];
   const cw = W >= 760 ? (W - 32) / 2 : W;
+  out.push(...missing(metrics.subgroups));
   for (const [ev, byH] of Object.entries(metrics.subgroups || {})) {
-    out.push(h("h3", {}, cap(ev)), h("div", { class: "pair" }, Object.entries(byH[H] || {}).map(([attr, groups]) =>
+    out.push(block(ev, evHead(ev), h("div", { class: "pair" }, Object.entries(byH[H] || {}).map(([attr, groups]) =>
       dumbbell(ATTR[attr] || attr, groups.map((g) => ({ label: g.label, sub: `${fmt(g.n_pos)} of ${fmt(g.n)} times before an onset`, a: g.models[fm]?.auroc, b: g.models.baseline1?.auroc })),
-        cw, [modelName(fm), MODEL.baseline1]))));
+        cw, [modelName(fm), MODEL.baseline1], fake(ev))))));
   }
   fill("subgroups", out.length > 2 ? out : empty("Subgroup results not computed.", RUN.evaluate));
 }
@@ -483,8 +520,19 @@ function renderAll() {
   else { if (!picker) caseShell(); drawCase(); }
 }
 
+// hypoxemia blocks only; with no metrics.json, a skeleton carries just enough for the sections to draw them
+function useIllustrative() {
+  realN = metrics?.n?.hypoxemia; realSplit = metrics?.split;
+  metrics ||= { final_model: ill.final_model, models: ill.models, headline_horizon_min: ill.headline_horizon_min, bootstrap: ill.bootstrap };
+  for (const k of BLOCKS) metrics[k] = { ...metrics[k], hypoxemia: ill[k] };
+  metrics.alerts = { ...metrics.alerts, threshold: { ...metrics.alerts?.threshold, hypoxemia: ill.alert_threshold } };
+}
+
 async function main() {
-  [cohort, metrics, index] = await Promise.all([get("cohort.json"), get("metrics.json"), get("cases/index.json")]);
+  const wantIll = q.get("illustrative") === "1";
+  let illFile;
+  [cohort, metrics, index, illFile] = await Promise.all([get("cohort.json"), get("metrics.json"), get("cases/index.json"),
+    wantIll ? get("illustrative_hypoxemia.json", "") : null]);
   const status = document.getElementById("status");
   if (location.protocol === "file:")
     status.replaceChildren("Open this page through the local server so it can read the results: ",
@@ -494,6 +542,15 @@ async function main() {
       ? "Results on the held-out test split, run once."
       : "Results on the validation split.";
   else status.textContent = "No model has been evaluated yet. Sections without results say what to run.";
+  if (wantIll && illFile?.illustrative === true) { // the file must say so itself, or it is not shown
+    ill = illFile;
+    status.textContent = `Hypotension: ${metrics ? status.textContent.toLowerCase() : "no model has been evaluated yet; its sections say what to run."} Hypoxemia: made-up illustrative numbers, see the banner.`;
+    useIllustrative();
+    document.title += " (illustrative)";
+    document.querySelector("header").prepend(h("div", { class: "ill-banner", role: "note" }, h("strong", {}, ILL),
+      h("p", {}, "Every hypoxemia number, chart and table on this page is made up to show what the results could look like with more surgeries. No model produced them. Hypotension results and the surgeries below are real. ",
+        h("a", { href: location.pathname }, "Show only real results"), ".")));
+  } else if (wantIll) status.append(" ", empty("Illustrative hypoxemia numbers were asked for but not found.", RUN.illustrative));
   renderAll();
   let raf;
   addEventListener("resize", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(renderAll); });

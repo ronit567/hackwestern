@@ -19,6 +19,9 @@
   --baseline: light-dark(#7a8794, #8796a4);
   --ev-hypotension: light-dark(#c6282822, #ff7a7a2e);
   --ev-hypoxemia: light-dark(#0277a822, #4fc3f72e);
+  /* illustrative (made-up) hypoxemia numbers: amber, never used for real data */
+  --ill: light-dark(#9a4a00, #ffb454);
+  --ill-stripe: light-dark(#c2660024, #ffb45426);
   --font: "Avenir Next", Avenir, Seravek, "Segoe UI", Roboto, system-ui, sans-serif;
   --font-num: "Avenir Next Condensed", "Avenir Next", "Roboto Condensed", "Arial Narrow", var(--font);
 }
@@ -142,3 +145,17 @@ tr.final th { font-weight: 600; }
 .rel figcaption { font-size: .875rem; font-weight: 600; margin-bottom: .25rem; }
 .rel figcaption .note { display: block; font-weight: 400; }
 svg .rel-pt { fill: var(--ink); stroke: var(--panel); stroke-width: 1.5; }
+
+/* ?illustrative=1: made-up hypoxemia numbers. Stripes + label on every block, table and chart */
+.ill { border-left: 4px solid var(--ill); padding-left: 12px; }
+.ill-tag { color: var(--ill); font-weight: 700; }
+/* stays in view and wraps while a wide table scrolls sideways on a phone */
+caption.ill-tag { padding-top: .25rem; position: sticky; left: 0; max-width: calc(100vw - 60px); }
+.ill-note { color: var(--ill); font-size: .875rem; font-weight: 600; }
+.ill table, tr.ill-row, .ill-banner { background: repeating-linear-gradient(135deg, transparent 0 8px, var(--ill-stripe) 8px 16px); }
+.ill-banner { border: 2px solid var(--ill); border-radius: 4px; padding: .75rem 1rem; margin-bottom: 1.5rem; }
+.ill-banner strong { color: var(--ill); font-size: 1.125rem; letter-spacing: .02em; }
+.ill-banner p { margin: .25rem 0 0; }
+.ill-banner a { color: var(--ink); }
+svg .ill-stripe { fill: var(--ill-stripe); }
+svg text.ill-label { fill: var(--ill); font-size: 11px; font-weight: 700; letter-spacing: .02em; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }

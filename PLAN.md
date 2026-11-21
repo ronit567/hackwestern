@@ -195,6 +195,8 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 ```
 `?theme=light` or `?theme=dark` overrides the system colour scheme (projectors, screenshots). The page computes nothing itself except one count: in how many value bands the final model's AUROC point estimate beats baseline 1's. `uv run pytest tests/test_export.py` checks the JSON and that `web/app.js` parses (`node --check`).
 
+`?illustrative=1` (demo only) replaces the **hypoxemia** blocks with made-up numbers from `web/illustrative_hypoxemia.json` (`uv run python -m orew.illustrative`, a fixed generator; no data or model goes in). The page then shows a banner, adds "(illustrative)" to the title and labels every hypoxemia heading, table, caption, tooltip and chart (stripes plus "ILLUSTRATIVE — NOT A REAL RESULT" inside the SVG). Hypotension and the surgeries stay real. Nothing in `src/orew` except the generator reads that file (`tests/test_illustrative.py`). Without the flag, each hypoxemia section says how few events the split has.
+
 **Conventions:** JSON written with `allow_nan=False` (missing = `null`). Times are **minutes from `casestart`**. Probabilities and rates are fractions 0–1 (the page shows %). Every metric is `[estimate, ci_low, ci_high]` (95 % CI, patient bootstrap) or `null` if not computed. Object keys for horizons are strings: `"5"`, `"10"`, `"15"`. Events are `"hypotension"` and `"hypoxemia"`. Models are `baseline1, baseline2, snapshot, trajectory, pattern, fusion`.
 
 ### `reports/web/cohort.json`: `export.py`

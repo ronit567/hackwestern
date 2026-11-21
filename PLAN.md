@@ -212,7 +212,7 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `splits` *(once labels.py has run)* | `{train|val|test: {n_subjects, n_cases}}` over the whole cohort | `processed/splits.json` |
 
 ### `reports/web/cases/index.json` + `cases/{caseid}.json`: `export.py`
-- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for the first `--max-cases` cached cases, in cohort order, plus `split` (`null` until labels.py has run).
+- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for `--max-cases` cached cases: val surgeries with events first (up to `--max-cases // 2`, so the explorer opens on one), then the rest, in cohort order within each; plus `split` (`null` until labels.py has run).
 - `{caseid}.json`:
 
 | Field | Shape / unit |

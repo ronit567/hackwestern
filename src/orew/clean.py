@@ -99,7 +99,7 @@ FILL = CFG["grid"]["ffill_max_s"] // STEP
 BEAT = ["beat_pp", "beat_dpdt", "beat_sys_area", "beat_hr", "beat_ppv", "beat_sbp_sd"]
 BEAT_STEPS = int(pd.Timedelta(BEAT_WIN).total_seconds()) // STEP + 1  # grid steps a beat window can reach back
 PLETH_LEVEL = 300 // STEP  # trailing 5 min of pleth amplitude = its "own level"
-PLETH_CV_MAX = 0.5  # ~95th pct of 30 s pleth CV; emergence motion runs above it, real desaturations stayed below
+PLETH_CV_MAX = 0.5  # ~95th pct of 30 s pleth CV; emergence motion (0-95 swings) runs above it
 PLETH_FLAT, PLETH_RAIL = 2, 90  # amplitude of a pulseless pleth is 0.4-1.2 (ADC steps); the ADC rail is ~95
 SPO2_STEP = 5  # a fall between consecutive readings this big is 0.04% of readings
 SPO2_DROP = 3  # back within this of the pre-drop value ends an episode

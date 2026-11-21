@@ -40,6 +40,8 @@ const empty = (what, cmd) => h("p", { class: "empty" }, `${what} Run `,
   h("code", {}, cmd.split(" ").map((w, i) => [i ? " " : null, h("span", { class: "nw" }, w)])), " to fill it.");
 const fmt = (v, d = 0) => (v == null ? "n/a" : v.toLocaleString("en", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const pct = (v, d = 0) => (v == null ? "n/a" : `${fmt(v * 100, d)} %`);
+// a probability in %, to 2 significant digits: hypoxemia risks sit well below 1 %
+const prob = (v, unit = "") => (v == null ? "n/a" : (v * 100).toLocaleString("en", { maximumSignificantDigits: 2 }) + unit);
 const counts = (o, name = (k) => k, sortByKey) =>
   Object.entries(o).sort(sortByKey ? (a, b) => a[0].localeCompare(b[0]) : (a, b) => b[1] - a[1])
     .map(([k, n]) => `${name(k)}: ${n}`).join(", ");
@@ -203,14 +205,14 @@ function caseChart(c, W, readout) {
     const sorted = r.cls === "drug" && [...seen].sort((a, b) => a - b), cut = sorted && Math.max(1, sorted[Math.floor(sorted.length * 0.98)]);
     const clipped = cut && hi > cut;
     if (clipped) hi = cut;
-    if (r.risk) [lo, hi] = [0, 1];
+    if (r.risk) [lo, hi] = [0, Math.min(1, 1.2 * Math.max(0.001, r.risk.threshold ?? 0, ...seen))];
     const n = r.h > 90 ? 4 : r.h >= 80 ? 3 : 2, st = niceStep(lo, hi || 1, n);
     [lo, hi] = [Math.floor(lo / st) * st, Math.ceil(hi / st) * st || 1];
     const tk = ticks(lo, hi, n, st), y = lin(lo, hi, r.y0 + r.h, r.y0);
     g.push(s("text", { class: "title", x: ML, y: r.y0 - 6 }, r.label, clipped ? s("tspan", { class: "row-sub" }, "  (brief peaks run off the top)") : null));
     for (const v of tk) {
       g.push(s("line", { class: "grid", x1: ML, x2: W - MR, y1: y(v), y2: y(v) }));
-      g.push(s("text", { x: ML - 6, y: y(v) + 4, "text-anchor": "end" }, r.risk ? `${v * 100}` : `${v}`));
+      g.push(s("text", { x: ML - 6, y: y(v) + 4, "text-anchor": "end" }, r.risk ? prob(v) : `${v}`));
     }
     const clip = `clip-${r.key}`;
     g.push(s("clipPath", { id: clip }, s("rect", { x: ML, y: r.y0, width: W - MR - ML, height: r.h })));
@@ -226,7 +228,8 @@ function caseChart(c, W, readout) {
     for (const a of (c.alerts || []).filter((a) => r.risk && a.type === r.ev))
       inner.push(s("path", { class: "alert", d: `M${x(a.t_min)},${r.y0 + 9}l-5,-9h10z` }, s("title", {}, `Alert at ${fmt(a.t_min, 1)} min`)));
     g.push(s("g", { "clip-path": `url(#${clip})` }, inner));
-    summary.push(`${r.label}: ${seen.length ? `median ${fmt(median(seen) * (r.risk ? 100 : 1))}, range ${fmt(Math.min(...seen) * (r.risk ? 100 : 1))} to ${fmt(Math.max(...seen) * (r.risk ? 100 : 1))}` : "no data"}.`);
+    const f = r.risk ? prob : fmt;
+    summary.push(`${r.label}: ${seen.length ? `median ${f(median(seen))}, range ${f(Math.min(...seen))} to ${f(Math.max(...seen))}` : "no data"}.`);
   }
 
   // crosshair readout, by pointer or arrow keys
@@ -245,7 +248,7 @@ function caseChart(c, W, readout) {
     }
     for (const [ev, r] of risks) {
       let j = r.t_min.findLastIndex((u) => u <= t);
-      if (j >= 0 && r.p10[j] != null) parts.push(`${ev} 10 min risk ${pct(r.p10[j])}`);
+      if (j >= 0 && r.p10[j] != null) parts.push(`${ev} 10 min risk ${prob(r.p10[j], " %")}`);
     }
     readout.textContent = parts.join(", ");
     cursor.setAttribute("x1", x(t)); cursor.setAttribute("x2", x(t)); cursor.setAttribute("visibility", "visible");
@@ -270,7 +273,7 @@ function caseChart(c, W, readout) {
 function alertList(c) {
   if (!c.alerts?.length) return null;
   return h("div", {}, h("h3", {}, "Alerts in this surgery"), h("ul", { class: "alerts" }, c.alerts.map((a) =>
-    h("li", {}, h("strong", {}, `${fmt(a.t_min, 1)} min, ${a.type}`), `: 10 min risk ${pct(a.p10)}, led by the ${a.lead_specialist} model. `,
+    h("li", {}, h("strong", {}, `${fmt(a.t_min, 1)} min, ${a.type}`), `: 10 min risk ${prob(a.p10, " %")}, led by the ${a.lead_specialist} model. `,
       `Drivers: ${(a.top_drivers || []).join("; ")}.`))));
 }
 
@@ -402,11 +405,11 @@ function reliability(title, sub, pts, D, size) {
   g.push(s("line", { class: "thr", x1: x(0), y1: y(0), x2: x(D), y2: y(D) }));
   g.push(s("path", { class: "line s-risk", d: pathD(pts.map((p) => p.p), pts.map((p) => Math.min(p.obs, D)), x, y) }));
   for (const p of pts) g.push(s("circle", { class: "rel-pt", cx: x(p.p), cy: y(Math.min(p.obs, D)), r: 3.5 },
-    s("title", {}, `Predicted ${pct(p.p, 1)}, observed ${pct(p.obs, 1)}, ${fmt(p.n)} times`)));
+    s("title", {}, `Predicted ${prob(p.p, " %")}, observed ${prob(p.obs, " %")}, ${fmt(p.n)} times`)));
   return h("figure", { class: "rel" }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
     s("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" }, g),
     h("div", { class: "vh" }, h("table", {}, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
-      pts.map((p) => h("tr", {}, h("td", {}, pct(p.p, 1)), h("td", {}, pct(p.obs, 1)), h("td", {}, fmt(p.n)))))));
+      pts.map((p) => h("tr", {}, h("td", {}, prob(p.p, " %")), h("td", {}, prob(p.obs, " %")), h("td", {}, fmt(p.n)))))));
 }
 
 function calibration(W) {
@@ -438,7 +441,7 @@ function alertsSection() {
     out.push(evTable(ev,
       h("thead", {}, h("tr", {}, h("th", { scope: "col" }, "Model"), h("th", { scope: "col" }, "Threshold, %"), ALERT.map(([, l]) => h("th", { scope: "col" }, l)))),
       h("tbody", {}, metrics.models.filter((m) => byM[m]).map((m) => h("tr", { class: m === metrics.final_model ? "final" : null },
-        h("th", { scope: "row" }, modelName(m)), h("td", {}, a.threshold?.[ev]?.[m] == null ? "n/a" : fmt(a.threshold[ev][m] * 100)),
+        h("th", { scope: "row" }, modelName(m)), h("td", {}, prob(a.threshold?.[ev]?.[m])),
         ALERT.map(([k, , d, p]) => cell(byM[m][k], d, p)))))));
   }
   fill("alerts", out);

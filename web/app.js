@@ -2,8 +2,8 @@
 // Renders only what is in reports/web/*.json (contract: PLAN.md "Results frontend"). Nothing is computed from guesses.
 
 const q = new URLSearchParams(location.search);
-// ?data=<dir/> reads another export dir (used to check the metrics sections against a fixture); ?theme=light|dark forces a theme
-const DATA = q.get("data") || "../reports/web/";
+const DATA = "../reports/web/";
+// ?theme=light|dark overrides the system setting (projectors, screenshots)
 if (q.get("theme")) document.documentElement.dataset.theme = q.get("theme");
 
 const RUN = {

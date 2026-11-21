@@ -363,6 +363,38 @@ function metricsSection() {
       : h("p", { class: "note" }, "Drug-feature ablation not computed."));
 }
 
+function reliability(title, sub, pts, D, size) {
+  const M = 34, x = lin(0, D, M, size - 8), y = lin(0, D, size - M + 8, 8);
+  const tk = ticks(0, D, 2), g = [];
+  for (const v of tk) {
+    g.push(s("line", { class: "grid", x1: x(v), x2: x(v), y1: y(0), y2: y(D) }), s("line", { class: "grid", x1: x(0), x2: x(D), y1: y(v), y2: y(v) }));
+    g.push(s("text", { x: x(v), y: y(0) + 16, "text-anchor": "middle" }, fmt(v * 100)), s("text", { x: x(0) - 5, y: y(v) + 4, "text-anchor": "end" }, fmt(v * 100)));
+  }
+  g.push(s("line", { class: "thr", x1: x(0), y1: y(0), x2: x(D), y2: y(D) }));
+  g.push(s("path", { class: "line s-risk", d: pathD(pts.map((p) => p.p), pts.map((p) => Math.min(p.obs, D)), x, y) }));
+  for (const p of pts) g.push(s("circle", { class: "rel-pt", cx: x(p.p), cy: y(Math.min(p.obs, D)), r: 3.5 },
+    s("title", {}, `Predicted ${pct(p.p, 1)}, observed ${pct(p.obs, 1)}, ${fmt(p.n)} times`)));
+  return h("figure", { class: "rel" }, h("figcaption", {}, title, h("span", { class: "note" }, sub)),
+    s("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" }, g),
+    h("table", { class: "vh" }, h("caption", {}, title), h("tr", {}, h("th", {}, "Predicted"), h("th", {}, "Observed"), h("th", {}, "Times")),
+      pts.map((p) => h("tr", {}, h("td", {}, pct(p.p, 1)), h("td", {}, pct(p.obs, 1)), h("td", {}, fmt(p.n))))));
+}
+
+function calibration(W) {
+  const H = HH(), out = [h("p", {}, `Predicted against observed risk of an onset in the next ${H} minutes, in bins of predicted risk, both in %. Points on the dashed diagonal are well calibrated; points below it mean the model overstates risk.`)];
+  const size = Math.max(150, Math.min(230, Math.floor((W - 48) / 3)));
+  for (const [ev, byH] of Object.entries(metrics.reliability || {})) {
+    const byM = byH[H] || {}, all = Object.values(byM).flat();
+    if (!all.length) continue;
+    const D = Math.min(1, Math.ceil(Math.max(...all.flatMap((p) => [p.p, p.obs])) * 10) / 10);
+    out.push(h("h3", {}, cap(ev)), h("div", { class: "rels" }, metrics.models.filter((m) => byM[m]?.length).map((m) => {
+      const b = metrics.overall?.[ev]?.[H]?.[m]?.brier;
+      return reliability(modelName(m), b ? `Brier ${fmt(b[0], 3)}` : "Brier not computed", byM[m], D, size);
+    })));
+  }
+  fill("calibration", out.length > 1 ? out : empty("Reliability curves not computed.", RUN.evaluate));
+}
+
 let cohort, metrics, index;
 
 function renderAll() {
@@ -373,6 +405,7 @@ function renderAll() {
     const W = document.querySelector("#headline .body").clientWidth;
     headline(W);
     metricsSection();
+    calibration(W);
   }
   if (!index?.length) fill("cases", empty("No surgeries exported yet.", RUN.export));
   else { if (!picker) caseShell(); drawCase(); }

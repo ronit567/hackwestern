@@ -11,6 +11,7 @@
 <header>
   <h1>Operating room early warning</h1>
   <p class="lead">Every 30 s during surgery, the model estimates whether hypotension (arterial MAP below 65 mmHg for 60 s) or hypoxemia (SpO2 below 90 % for 2 min) starts in the next 5, 10 or 15 minutes. The claim under test: it warns earlier and more accurately than watching the current number, including while that number still looks normal.</p>
+  <p><a href="live.html">Live monitor: watch the model replay an unseen test surgery</a> (needs the demo server, <code>uv run python -m orew.app</code>)</p>
   <p id="status" class="status"></p>
   <nav aria-label="Sections">
     <a href="#summary">Result</a>

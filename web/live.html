@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OR Early Warning · live monitor</title>
+<link rel="stylesheet" href="live.css">
+<script src="live.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v7h7v6h-7v7H9v-7H2V9h7z"/></svg>
+    <div>
+      <h1>OR Early Warning</h1>
+      <p class="sub">Intraoperative hypotension forecasting · unseen test surgeries</p>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Unseen test surgeries"></nav>
+  <nav class="links" aria-label="Pages">
+    <a href="demo.html">How it works</a>
+    <a href="index.html">Full results</a>
+  </nav>
+</header>
+
+<section class="vitals" id="vitals" aria-label="Vital signs at the replay clock"></section>
+
+<main class="main">
+  <section class="card table-card" aria-labelledby="tbl-h">
+    <div class="card-h"><h2 id="tbl-h">Minute-by-minute risk</h2><span class="hint">risk of hypotension in the next 10 min</span></div>
+    <div class="tbl-wrap" id="tbl-wrap" tabindex="0">
+      <table>
+        <thead><tr><th>Time</th><th>MAP</th><th>Current-MAP rule</th><th>XGBoost snapshot</th><th class="fus">Fusion</th><th>Leading factor</th><th>Alert</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card right" aria-label="Status, risk timeline and current scores">
+    <div id="banner" class="banner calm" role="status" aria-live="polite"></div>
+    <div class="card-h"><h2>Risk timeline</h2><ul class="legend" aria-hidden="true">
+      <li><i class="sw fus"></i>Fusion (final model)</li><li><i class="sw snap"></i>XGBoost snapshot</li>
+      <li><i class="sw rule"></i>Current-MAP rule</li><li><i class="sw thr"></i>Alarm threshold</li>
+      <li><i class="dot"></i>Alarm</li><li><i class="sw drop"></i>Drop: MAP &lt; 65</li></ul></div>
+    <div id="chart" class="chart"></div>
+    <div class="scores">
+      <div class="bars-wrap">
+        <div class="card-h"><h2>Current scores</h2><span class="hint" id="scores-at"></span></div>
+        <div class="bars" id="bars"></div>
+      </div>
+      <div class="board" id="board"></div>
+    </div>
+    <p id="caption" class="caption"></p>
+  </section>
+</main>
+
+<p class="foot"><span>Unseen test surgery. The model sees only data up to the replay clock; drops are marked only once they happen. Risk is not scored while a drop is in progress, as in the evaluation.</span><span id="source" class="source"></span></p>
+
+<footer class="bar" aria-label="Playback">
+  <button type="button" id="play" class="round play" aria-label="Play (space bar)"></button>
+  <button type="button" id="step" class="round" aria-label="Step 30 s" title="Step 30 s"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5l9 7-9 7z"/><rect x="16" y="5" width="2.6" height="14"/></svg></button>
+  <button type="button" id="restart" class="round" aria-label="Restart" title="Restart"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5a7 7 0 1 1-6.6 4.7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M4 3.5v6h6z"/></svg></button>
+  <span class="clock" id="clock">0:00 / —</span>
+  <div class="progress" id="progress" role="slider" tabindex="0" aria-label="Seek (arrow keys: 5 min)"><div class="fill" id="fill"></div></div>
+  <span class="status" id="status"></span>
+  <div class="speeds" role="group" aria-label="Speed"><span>Speed</span></div>
+  <button type="button" id="skip" class="skip"><span class="tag">presenter</span> Skip to 10 min before next drop</button>
+</footer>
+<noscript><p>This monitor draws with JavaScript and needs the demo server: <code>uv run python -m orew.app</code>.</p></noscript>
+</body>
+</html>

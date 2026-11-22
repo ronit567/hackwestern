@@ -692,13 +692,14 @@ function summarySection() {
   const band = (bn) => {
     const a = bn.models[fm]?.auroc, z = bn.models.baseline1?.auroc;
     if (!a || !z) return null;
-    const clear = a[1] > z[2]; // the two 95 % intervals do not overlap
+    // evaluate's paired bootstrap: the 95 % interval of the AUROC gain is above 0 (fallback: the intervals are apart)
+    const clear = bn.models[fm].beats_baseline1?.auroc_ci ?? a[1] > z[2];
     return h("div", { class: clear ? "band" : "band unclear" },
       h("p", { class: "band-label" }, binLabel("hypotension", bn.label), " mmHg"),
       h("p", { class: "band-num" }, f2(a[0]), h("span", { class: "vs" }, ` vs ${f2(z[0])}`)),
       h("p", { class: "tile-ci" }, `95 % CI ${ci(a, f2)} vs ${ci(z, f2)}`),
-      h("p", { class: "band-verdict" }, clear ? "Clear win: the intervals do not overlap."
-        : a[0] > z[0] ? "Higher, but the intervals overlap: not a clear win." : "Not better in this band."));
+      h("p", { class: "band-verdict" }, clear ? "Clear win: the 95 % interval of the gain is above zero."
+        : a[0] > z[0] ? "Higher, but the gain's 95 % interval includes zero: not a clear win." : "Not better in this band."));
   };
   fill("summary",
     h("p", { class: "hero" }, metrics.split === "test" ? `Evaluated once on ${fmt(n.cases)} surgeries the model never saw.` : `Evaluated on ${fmt(n.cases)} validation surgeries (not the final test).`),

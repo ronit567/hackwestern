@@ -2,7 +2,7 @@
   {"caseid": 287, "kind": "warned", "false_alarms": false, "map_normal_at_alarm": true,
    "reason": "Clean early warning: both drops flagged minutes ahead while MAP still read above 65, no false alarms."},
   {"caseid": 5566, "kind": "warned", "false_alarms": true, "map_normal_at_alarm": false,
-   "reason": "Every drop warned ahead, most while MAP was still above 65, but with some false alarms along the way."},
+   "reason": "Every drop warned ahead, but the drops came back to back, so some alarms fired just as MAP recovered from the one before; some false alarms too."},
   {"caseid": 3449, "kind": "partial", "false_alarms": false, "map_normal_at_alarm": false,
    "reason": "Most drops warned ahead, one missed; no false alarms."},
   {"caseid": 1046, "kind": "missed", "false_alarms": true, "map_normal_at_alarm": false,

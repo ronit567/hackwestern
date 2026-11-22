@@ -425,11 +425,15 @@ function eventList(c) {
     if (!evs.length) return null;
     return h("div", { class: "events" },
       h("h3", {}, `${cap(ev)}: when each ${E.one} started, and the model's first alarm before it`, ev === "hypoxemia" ? [" ", tag(EXPLORATORY)] : null),
-      h("p", { class: "note" }, `A ${E.one} is ${E.sig} under ${E.thr} ${E.unit} for ${E.dur}. It counts as warned if an alarm fired in the 10 minutes before it started.`),
+      h("p", { class: "note" }, `A ${E.one} is ${E.sig} under ${E.thr} ${E.unit} for ${E.dur}. It counts as warned if an alarm fired in the 10 minutes before it started (the evaluation's rule), so one alarm can count for back-to-back ${E.many}.`),
       h("ol", {}, evs.map((e, i) => {
         const a = e.alarm_min != null && c.alerts?.find((x) => x.type === ev && x.t_min === e.alarm_min);
+        // above the threshold just after a drop ended is a recovery, not a normal-looking number
+        const p = a ? evs.findLastIndex((q) => q.end_min <= a.t_min) : -1, gap = p >= 0 ? a.t_min - evs[p].end_min : Infinity;
+        const between = a ? evs.flatMap((q, j) => (q.onset_min > a.t_min && q.onset_min < e.onset_min ? [j + 1] : [])) : [];
         const what = a ? [h("strong", {}, `Warned ${mins(e.lead_min)} earlier`), ` (alarm at ${hm(a.t_min, true)}).`,
-          a.now != null ? ` ${E.sig} at the alarm: ${fmt(a.now)} ${E.unit}, ${a.now > E.thr ? `still above ${E.thr}: the number looked normal.` : a.now === E.thr ? `right at ${E.thr}, not under it yet.` : `already under ${E.thr}, but not yet for ${E.dur}.`}` : null]
+          a.now != null ? ` ${E.sig} at the alarm: ${fmt(a.now)} ${E.unit}, ${a.now > E.thr ? (gap <= 5 ? `back above ${E.thr} only ${gap < 1 ? `${Math.round(gap * 60)} s` : mins(gap)} after ${E.one} ${p + 1} ended.` : `still above ${E.thr}: the number looked normal.`) : a.now === E.thr ? `right at ${E.thr}, not under it yet.` : `already under ${E.thr}, but not yet for ${E.dur}.`}` : null,
+          between.length ? ` This alarm also came before ${plural(between.length, E)} ${between.join(" and ")}.` : null]
           : e.warnable === false ? [h("strong", {}, "Not scored"), ": it started before the model's first prediction (first 10 min)."]
           : e.warnable ? [h("strong", { class: "miss" }, "Missed"), ": no alarm in the 10 minutes before it."]
           : "No risk curves for this surgery.";

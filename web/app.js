@@ -247,7 +247,7 @@ function placer(lo, hi) {
 }
 
 function caseChart(c, W, readout) {
-  const ML = 56, MR = 14, TOP = 46, GAP = 32, narrow = W < 600; // narrow: titles start at the left edge, shorter
+  const ML = 56, MR = 14, TOP = 46, GAP = 32, narrow = W < 600; // narrow: titles start at the left edge, shorter, and sit higher to clear the top tick label
   // anestart can precede casestart and aneend follow caseend, so the axis spans every marker
   const marks = Object.values(c.phases_min).filter((v) => v != null);
   const T = c.t_min, end = Math.max(c.duration_min || 0, T[T.length - 1] || 1, ...marks), start = Math.min(0, ...marks);
@@ -265,7 +265,7 @@ function caseChart(c, W, readout) {
   let yTop = TOP;
   const rows = [lane("hypotension"), sig("map"), risk("hypotension"), lane("hypoxemia"), sig("spo2"), risk("hypoxemia"),
     ...["hr", "etco2", "bis", "ppf_rate", "rftn_ug_h"].map(sig)].filter(Boolean)
-    .map((p) => { const r = { ...p, y0: yTop + 20 }; yTop = r.y0 + p.h + GAP; return r; });
+    .map((p) => { const r = { ...p, y0: yTop + (narrow ? 26 : 20) }; yTop = r.y0 + p.h + GAP; return r; });
   const H = yTop + 4;
   const tStep = [1, 2, 5, 10, 15, 30, 60, 120].find((st) => x(st) - x(0) >= 52) || 120;
   const minor = { 1: 0.5, 2: 1, 5: 1, 10: 5, 15: 5, 30: 5, 60: 5, 120: 10 }[tStep];
@@ -300,7 +300,7 @@ function caseChart(c, W, readout) {
   const alarmAt = (e) => e.alarm_min != null && (c.alerts || []).find((a) => a.type === e.type && a.t_min === e.alarm_min);
   const summary = [];
   for (const r of rows) {
-    g.push(s("text", { class: "title", x: narrow ? 0 : ML, y: r.y0 - 7 }, (narrow && r.short) || r.label, r.sub ? s("tspan", { class: "row-sub" }, `  ${r.sub}`) : null));
+    g.push(s("text", { class: "title", x: narrow ? 0 : ML, y: r.y0 - (narrow ? 12 : 7) }, (narrow && r.short) || r.label, r.sub ? s("tspan", { class: "row-sub" }, `  ${r.sub}`) : null));
     const clip = `clip-${r.key}`, inner = [];
     g.push(s("clipPath", { id: clip }, s("rect", { x: ML, y: r.y0 - 2, width: W - MR - ML, height: r.h + 4 })));
     if (r.lane) { // alarms on top, a bracket from the warning alarm to the onset, the onset as a line

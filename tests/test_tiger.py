@@ -90,6 +90,9 @@ def test_insights_unavailable_without_a_database(no_db):
     assert tiger.insights() == {"available": False, "reason": "TIGER_DATABASE_URL not set"}
     assert all(q["title"] and q["plain"] and q["sql"] for q in tiger.QUERIES)
     assert "hypoxemia" not in json.dumps(tiger.QUERIES).lower()  # exploratory: no hypoxemia claim
+    # alarms.map_now is the cleaned MAP and 221 of the 750 alarms fired under 65: no "on the monitor" / "looked normal"
+    q = next(q for q in tiger.QUERIES if "FROM alarms GROUP BY" in q["sql"])
+    assert "cleaned MAP" in q["plain"] and "normal" not in q["title"] and "monitor" not in q["plain"]
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 

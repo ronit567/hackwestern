@@ -45,7 +45,7 @@ What is in the database (`src/orew/tiger.py`):
 - `events` (hypotension and hypoxemia onsets from `events.parquet`) and `alarms` (the evaluation's alarm rule on p10; `is_true` = a hypotension onset within 10 min).
 - `vitals_1min`: a continuous aggregate (`time_bucket(60, t_sec)` per surgery: average and minimum MAP, average HR, minimum SpO2), refreshed by `load`.
 
-The insight queries (title, one-line explanation, SQL and rows in `/api/insights`): average 10-min risk by minute before a real hypotension onset against times with no drop coming; alarms grouped by the MAP on the monitor when they fired, and how many were followed by a drop; the surgeries with the most minutes under 65 (from `vitals_1min`) next to their events and alarms; and the compression of `grid`. They read the locked predictions only, so they add no new result.
+The insight queries (title, one-line explanation, SQL and rows in `/api/insights`): average 10-min risk by minute before a real hypotension onset against times with no drop coming; alarms grouped by the cleaned MAP the model read when they fired, and how many were followed by a drop; the surgeries with the most minutes under 65 (from `vitals_1min`) next to their events and alarms; and the compression of `grid`. They read the locked predictions only, so they add no new result.
 
 The replay from Tiger equals the replay from the local files: `tests/test_tiger.py` loads two surgeries into a throwaway schema and checks the grid frame and the whole replay (runs only when `TIGER_DATABASE_URL` is set). If the database cannot be reached, the app falls back to the local files and `/api/health` says `"local"`.
 

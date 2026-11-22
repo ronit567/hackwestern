@@ -186,9 +186,10 @@ QUERIES = [
 SELECT coalesce((time_bucket(60, -until_s) / 60)::text, 'no drop within 15 min') AS minute_before_onset,
        round(avg(p10)::numeric, 3) AS avg_risk_10min, count(*) AS prediction_times
 FROM r GROUP BY 1 ORDER BY max(until_s) DESC NULLS LAST"""},
-    {"title": "Warnings while the number looked normal",
-     "plain": "The model's alarms, grouped by the MAP on the monitor when each fired; 'followed by a drop' means a real "
-              "hypotension onset came within the next 10 minutes (the evaluation's true alarm).",
+    {"title": "Alarms by the MAP when they fired",
+     "plain": f"The model's alarms, grouped by the cleaned MAP the model read when each fired (no valid reading: not "
+              f"recorded); 'under {LOW}' means already under {LOW}, but not yet for the 60 s an event needs. 'Followed by "
+              f"a drop' means a real hypotension onset came within the next 10 minutes (the evaluation's true alarm).",
      "sql": f"""SELECT CASE WHEN map_now >= 75 THEN '75 or more' WHEN map_now >= {LOW} THEN '{LOW} to 75'
             WHEN map_now < {LOW} THEN 'under {LOW}' ELSE 'not recorded' END AS map_at_alarm,
        count(*) AS alarms, count(*) FILTER (WHERE is_true) AS followed_by_drop,

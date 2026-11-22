@@ -26,6 +26,29 @@ uv run python -m orew.app --port 8000      # then open http://localhost:8000/
 - The replayed numbers are not new results. For the surgeries tested, they equal the locked test predictions exactly (`tests/test_live.py`).
 - API and event stream: [PLAN.md, "Live demo"](PLAN.md#live-demo).
 
+## Tiger Data
+
+With `TIGER_DATABASE_URL` set, the live demo reads each surgery's monitor data from Tiger Cloud (managed TimescaleDB on Postgres) instead of the local parquet files, and `/api/insights` runs SQL showcase queries on it. Without it, everything runs from the local files.
+
+1. Create a Tiger Cloud service (console.cloud.timescale.com; a free or trial dev service is enough) and copy its connection string.
+2. Put it in the repo's gitignored `.env`: `TIGER_DATABASE_URL=postgres://tsdbadmin:...@....tsdb.cloud.timescale.com:.../tsdb?sslmode=require`. It is never printed, logged or sent to the page.
+3. Load and check:
+   ```sh
+   uv run python -m orew.tiger load     # the 140 test surgeries, ~1 min; safe to re-run (it truncates and reloads)
+   uv run python -m orew.tiger check    # row counts per table, then every insight query
+   uv run python -m orew.app --port 8000   # /api/health now says "data_source": "tiger"
+   ```
+
+What is in the database (`src/orew/tiger.py`):
+- `grid`: hypertable on the integer `t_sec` (1-hour chunks), every 2 s sample of every monitor signal the model reads for the 140 test surgeries, the same columns and types as `data/processed/grid/*.parquet`. Compressed column by column (columnstore), segmented by `caseid` and ordered by `t_sec`.
+- `predictions`: hypertable with the locked test predictions (`preds_test.parquet`): p5/p10/p15, scored, MAP, and the 10-min snapshot and baseline 1 outputs.
+- `events` (hypotension and hypoxemia onsets from `events.parquet`) and `alarms` (the evaluation's alarm rule on p10; `is_true` = a hypotension onset within 10 min).
+- `vitals_1min`: a continuous aggregate (`time_bucket(60, t_sec)` per surgery: average and minimum MAP, average HR, minimum SpO2), refreshed by `load`.
+
+The insight queries (title, one-line explanation, SQL and rows in `/api/insights`): average 10-min risk by minute before a real hypotension onset against times with no drop coming; alarms grouped by the MAP on the monitor when they fired, and how many were followed by a drop; the surgeries with the most minutes under 65 (from `vitals_1min`) next to their events and alarms; and the compression of `grid`. They read the locked predictions only, so they add no new result.
+
+The replay from Tiger equals the replay from the local files: `tests/test_tiger.py` loads two surgeries into a throwaway schema and checks the grid frame and the whole replay (runs only when `TIGER_DATABASE_URL` is set). If the database cannot be reached, the app falls back to the local files and `/api/health` says `"local"`.
+
 ## Final test results
 
 Run once, locked (`reports/test.lock`): 140 surgeries from 139 patients never used for training, calibration or alert thresholds; 443 hypotension events; 53,269 prediction times. Hypotension, 10 minutes ahead. 95 % CIs from 1,000 patient-bootstrap resamples. Full tables: `reports/test_report.md` (written by `orew.evaluate`, not in git).

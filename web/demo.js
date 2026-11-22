@@ -227,12 +227,13 @@ function queryCard(qr) {
   const cell = (v, i) => (v == null ? "—" : typeof v === "number"
     ? v.toLocaleString("en", { minimumFractionDigits: dec[i], maximumFractionDigits: dec[i], useGrouping: !/id$/.test(cols[i]) }) : String(v));
   const shown = rows.slice(0, 20);
+  // the bar cell sits right after the column it draws
+  const barCell = (r) => h("td", { class: "bar", "aria-hidden": "true" }, h("span", { style: `width:${((Math.abs(r[bi] ?? 0) / mx) * 100).toFixed(1)}%` }));
+  const thead = h("thead", {}, h("tr", {}, cols.map((c, i) => [h("th", { scope: "col", class: i === bi ? "barred" : null }, c.replaceAll("_", " ")), i === bi ? h("td", { class: "bar" }) : null])));
+  const tbody = h("tbody", {}, shown.map((r) => h("tr", {}, r.map((v, i) => [
+    i ? h("td", { class: i === bi ? "barred" : null }, cell(v, i)) : h("th", { scope: "row" }, cell(v, i)), i === bi ? barCell(r) : null]))));
   return h("article", { class: "card query" }, h("h3", {}, qr.title), h("p", {}, qr.plain),
-    rows.length ? h("div", { class: "scroll" }, h("table", {},
-      h("thead", {}, h("tr", {}, cols.map((c, i) => h("th", { scope: "col", class: i === bi ? "barred" : null }, c.replaceAll("_", " "))), bi >= 0 ? h("td", { class: "bar" }) : null)),
-      h("tbody", {}, shown.map((r) => h("tr", {}, r.map((v, i) => (i ? h("td", { class: i === bi ? "barred" : null }, cell(v, i)) : h("th", { scope: "row" }, cell(v, i)))),
-        bi >= 0 ? h("td", { class: "bar", "aria-hidden": "true" }, h("span", { style: `width:${((Math.abs(r[bi] ?? 0) / mx) * 100).toFixed(1)}%` })) : null)))))
-      : h("p", { class: "note" }, "No rows."),
+    rows.length ? h("div", { class: "scroll" }, h("table", {}, thead, tbody)) : h("p", { class: "note" }, "No rows."),
     rows.length > shown.length ? h("p", { class: "note" }, `${rows.length - shown.length} more rows not shown.`) : null,
     h("details", {}, h("summary", {}, "Show the SQL"), h("pre", {}, h("code", {}, qr.sql || ""))));
 }

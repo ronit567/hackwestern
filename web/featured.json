@@ -1,6 +1,6 @@
 [
   {"caseid": 287, "kind": "warned", "false_alarms": false, "map_normal_at_alarm": true,
-   "reason": "Clean early warning: one alarm, while MAP still read above 65, came minutes before both scored drops; no false hypotension alarms."},
+   "reason": "Clean early warning: alarms while MAP still read above 65 came minutes before both scored drops; no false hypotension alarms."},
   {"caseid": 5566, "kind": "warned", "false_alarms": true, "map_normal_at_alarm": false,
    "reason": "Every drop warned ahead, but the drops came back to back, so some alarms fired just as MAP recovered from the one before; some false alarms too."},
   {"caseid": 3449, "kind": "partial", "false_alarms": false, "map_normal_at_alarm": false,

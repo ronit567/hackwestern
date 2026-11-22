@@ -1,7 +1,8 @@
 """Write reports/web/{cohort.json, cases/*.json} for the results page in web/. metrics.json is evaluate.py's job.
 
 Contract: PLAN.md, section "Results frontend". Case files get fusion risk curves and alerts from evaluate.py's p10 alarm
-simulator (models/threshold.json): train from the cross-fitted OOF preds, val, test only once evaluate's lock exists.
+simulator (models/threshold.json): train from the cross-fitted OOF preds, val, test only once evaluate's lock exists;
+each event then says whether an alarm warned it, with evaluate's definitions.
 """
 import argparse
 import json
@@ -12,7 +13,8 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from orew import PROCESSED, RAW, REPORTS
-from orew.evaluate import EVENTS, HH, HS, LOCK, alarms  # the alert simulator evaluate reports with
+from orew.evaluate import EVENTS, HH, HS, LOCK, NOW, WIN, alarms  # the alert simulator evaluate reports with
+from orew.evaluate import STEP as PRED_STEP
 
 OUT = REPORTS / "web"
 STEP = 10  # s, case-explorer resolution
@@ -66,7 +68,8 @@ def load_risk(ids, processed=PROCESSED, lock=LOCK):
         return None
     thr = json.loads(tf.read_text())
     assert all(thr[e]["chosen_on"] == "val" for e in EVENTS), "alert threshold must come from val (leakage #10)"
-    want = ["caseid", "t_sec", "split", *[f"{x}_{e}" for e in EVENTS for x in ("eligible", "lead_specialist")],
+    want = ["caseid", "t_sec", "split", *NOW.values(),
+            *[f"{x}_{e}" for e in EVENTS for x in ("eligible", "lead_specialist")], *[f"next_onset_{e}_s" for e in EVENTS],
             *[f"p_fusion_{e}_{h}" for e in EVENTS for h in HS]]
     frames, drivers = [], {}
     for k, p in src.items():
@@ -87,7 +90,9 @@ def load_risk(ids, processed=PROCESSED, lock=LOCK):
 
 
 def case_risk(d, t0, thr, drivers):
-    """risk + alerts of one case from its preds rows d (sorted by t_sec); p is null where the time is ineligible."""
+    """risk + alerts of one case from its preds rows d (sorted by t_sec); p is null where the time is ineligible. An
+    alert is true if an onset of its event follows within the alert window, as evaluate counts it; now = the current
+    MAP / SpO2 the baseline-1 model saw at that time."""
     t, risk, alerts = d.t_sec.to_numpy(), {}, []
     for e in EVENTS:
         el = d[f"eligible_{e}"].to_numpy(bool)
@@ -96,19 +101,44 @@ def case_risk(d, t0, thr, drivers):
         lead = d.get(f"lead_specialist_{e}")  # val / test only
         for i in np.flatnonzero(alarms(p[HH], d.caseid.to_numpy(), t, thr[e])):
             alerts.append({"type": e, "t_min": round((t[i] - t0) / 60, 2), "p10": sig3(p[HH][i:i + 1])[0],
+                           "true": bool(d[f"next_onset_{e}_s"].iat[i] <= WIN), "now": val(round(float(d[NOW[e]].iat[i]), 1)),
                            "lead_specialist": None if lead is None else val(lead.iat[i]),
                            "top_drivers": drivers.get((int(d.caseid.iat[i]), int(t[i])), {}).get(e)})
     return {"risk": risk, "alerts": sorted(alerts, key=lambda a: a["t_min"])}
 
 
-def pick(ids, cohort, ev, split_of, n):
-    """The n cases to export: up to n // 2 val surgeries with an event first (the explorer opens on the first), then the
-    rest; cohort order within each."""
+def detection(case, w=HH, eps=1e-6):
+    """Evaluate's warning rule on one case with risk, for the explorer: an event is warnable if its onset follows the
+    first prediction time, and warned by the first alarm in [onset - w, onset). Adds warnable, alarm_min and lead_min
+    (null = missed) to each event and a per-event-type summary. eps: times are rounded to 0.01 min but lie whole 2 s
+    steps apart, so it only absorbs float error at the window edges."""
+    out = {}
+    for e, r in case["risk"].items():
+        al = [a for a in case["alerts"] if a["type"] == e]
+        evs = [x for x in case.get("events", []) if x["type"] == e]
+        for x in evs:
+            x["warnable"] = bool(r["t_min"] and x["onset_min"] > r["t_min"][0])  # bool(): onset_min may be numpy
+            if x["warnable"]:
+                a = next((a["t_min"] for a in al if x["onset_min"] - w - eps <= a["t_min"] < x["onset_min"] - eps), None)
+                x["alarm_min"], x["lead_min"] = a, None if a is None else round(x["onset_min"] - a, 2)
+        leads = [x["lead_min"] for x in evs if x.get("lead_min") is not None]
+        out[e] = {"events": sum(x["warnable"] for x in evs), "not_warnable": sum(not x["warnable"] for x in evs),
+                  "warned": len(leads), "median_lead_min": round(float(np.median(leads)), 2) if leads else None,
+                  "alarms": len(al), "false_alarms": sum(not a["true"] for a in al),
+                  "hours": round(sum(v is not None for v in r[f"p{HH}"]) * PRED_STEP / 3600, 2)}
+    case["detection"] = out
+    return case
+
+
+def pick(ids, cohort, ev, split_of, n, lock=LOCK):
+    """The n cases to export, the least seen first: test (only once evaluate's locked run exists), val, train; within a
+    split surgeries with an event first (the explorer opens on the first); cohort order within each."""
     if ev is None or not split_of:
         return ids[:n]
     subj, has = cohort.set_index("caseid").subjectid, set(ev.caseid)
-    first = [c for c in ids if c in has and split_of.get(subj[c]) == "val"][: n // 2]
-    return first + [c for c in ids if c not in first][: n - len(first)]
+    rank = ["test", "val", "train"] if lock.exists() else ["val", "train"]
+    key = lambda c: (rank.index(split_of.get(subj[c])) if split_of.get(subj[c]) in rank else len(rank), c not in has)
+    return sorted(ids, key=key)[:n]  # stable: cohort order within each group
 
 
 def case_json(df, row, ev=None, split_of=None):
@@ -151,6 +181,7 @@ def export(max_cases=50, out=OUT):
         case = case_json(df, cases.loc[c], ev, split_of)
         if c in by_case:
             case.update(case_risk(by_case[c], cases.casestart[c], thr, drivers))
+            detection(case)
         dump(case, out / "cases" / f"{c}.json")
         index[c] = {"caseid": int(c), "duration_min": case["duration_min"], **case["demographics"], "split": case.get("split")}
     dump([index[c] for c in chosen], out / "cases" / "index.json")

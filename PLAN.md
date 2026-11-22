@@ -193,7 +193,7 @@ A static page (`web/index.html`, `app.js`, `style.css`: vanilla JS, hand-written
 uv run python -m orew.export                                   # cohort.json + cases/ (--max-cases, default 50)
 uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http://localhost:8000/web/
 ```
-`?theme=light` or `?theme=dark` overrides the system colour scheme (projectors, screenshots). The page computes nothing itself except one count: in how many value bands the final model's AUROC point estimate beats baseline 1's. `uv run pytest tests/test_export.py` checks the JSON and that `web/app.js` parses (`node --check`).
+`?theme=light` or `?theme=dark` overrides the system colour scheme (projectors, screenshots). The page computes nothing itself except two readings of metrics.json: in how many value bands the final model's AUROC point estimate beats baseline 1's, and per band whether the two 95 % intervals are apart ("clear win") or overlap ("not a clear win"). `#case=<caseid>` opens a surgery in the explorer (the picker writes it back); `web/featured.json` lists a few test surgeries with a one-line reason each, and `tests/test_export.py` checks each reason against the exported case. `uv run pytest tests/test_export.py` checks the JSON and that `web/app.js` parses (`node --check`).
 
 `?illustrative=1` (demo only) replaces the **hypoxemia** blocks with made-up numbers from `web/illustrative_hypoxemia.json` (`uv run python -m orew.illustrative`, a fixed generator; no data or model goes in). The page then shows a banner, adds "(illustrative)" to the title and labels every hypoxemia heading, table, caption, tooltip and chart (stripes plus "ILLUSTRATIVE — NOT A REAL RESULT" inside the SVG). Hypotension and the surgeries stay real. Nothing in `src/orew` except the generator reads that file (`tests/test_illustrative.py`). Without the flag, each hypoxemia section says how few events the split has.
 
@@ -212,7 +212,7 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `splits` *(once labels.py has run)* | `{train|val|test: {n_subjects, n_cases}}` over the whole cohort | `processed/splits.json` |
 
 ### `reports/web/cases/index.json` + `cases/{caseid}.json`: `export.py`
-- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for `--max-cases` cached cases: val surgeries with events first (up to `--max-cases // 2`, so the explorer opens on one), then the rest, in cohort order within each; plus `split` (`null` until labels.py has run).
+- `index.json`: `[{caseid, duration_min, age, sex, height, weight, bmi, asa, emop, department, optype, opname}]` for `--max-cases` cached cases, the least seen first: test (only once `reports/test.lock` exists), then val, then train; within each split surgeries with an event first (so the explorer opens on one); cohort order within each; plus `split` (`null` until labels.py has run).
 - `{caseid}.json`:
 
 | Field | Shape / unit |
@@ -223,9 +223,10 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000       # then open http:
 | `t_min` | `[n]` min. 10 s bins `(t − 10 s, t]`, each holding the last finite 2 s value (raw grid, before artifact cleaning) |
 | `series` | `{map, nibp_map, spo2, hr, etco2, bis, ppf_rate, rftn_ug_h}`, each `[n]` aligned with `t_min`, `null` where the bin has no data. Units: mmHg, mmHg, %, bpm, mmHg, BIS 0–100, mL/h (propofol 20 mg/mL), µg/h (remifentanil, both pumps: 20 × `rftn_rate` + 50 × `rftn50_rate`, as in `clean.py`) |
 | `split` *(labels.py)* | `"train" | "val" | "test"`, from `processed/splits.json`. The page says what the split means for the risk traces (see below) |
-| `events` *(labels.py)* | `[{type, onset_min, end_min}]` from `processed/events.parquet` (`end_min` = last grid time of the run). Present only for labelled cases (`processed/grid/{id}.parquet` exists); `[]` means labelled with no events |
+| `events` *(labels.py)* | `[{type, onset_min, end_min}]` from `processed/events.parquet` (`end_min` = last grid time of the run). Present only for labelled cases (`processed/grid/{id}.parquet` exists); `[]` means labelled with no events. With `risk`, each event also has `warnable` (onset after the case's first prediction time), `alarm_min` (the first alert of its type in [onset − 10 min, onset), `null` = missed) and `lead_min` |
 | `risk` *(later, fusion/explain.py)* | `{event: {t_min: [m], p5: [m], p10: [m], p15: [m], threshold: float}}` on the 30 s prediction grid, `null` at dropped times |
-| `alerts` *(later, explain.py)* | `[{type, t_min, p10, lead_specialist, top_drivers: [str, str, str]}]`: fired alerts (after the 5 min refractory period) with the plain-language drivers from that record |
+| `alerts` *(later, explain.py)* | `[{type, t_min, p10, true, now, lead_specialist, top_drivers: [str, str, str]}]`: fired alerts (after the 5 min refractory period) with the plain-language drivers from that record (`null` for train). `true`: an onset of that event follows within 10 min (evaluate's true alarm); `now`: the current MAP / SpO2 at t (`map_now` / `spo2_now`, baseline 1's input) |
+| `detection` *(with risk)* | `{event: {events, not_warnable, warned, median_lead_min, alarms, false_alarms, hours}}`: the explorer's one-line verdict, with evaluate's definitions on this surgery alone (`events` = warnable; `hours` = eligible prediction time) |
 
 `export.py` adds `split` and `events` whenever the labels.py outputs exist. `risk` and `alerts` are for explain.py's records: when they exist, `export.py` must add them in this shape, with these split rules:
 - **train**: only from a cross-fitted stacker, so every train surgery is scored by specialist *and* stacker folds that excluded its subject. If fusion.py fits one stacker on all of train, train surgeries get no `risk` or `alerts`.

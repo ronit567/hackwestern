@@ -80,7 +80,7 @@ def create_app(model=None, warm=False):
         async def events():
             yield ": computing\n\n"  # open the stream at once; a surgery's first replay takes a few seconds
             r = await asyncio.to_thread(replay, cid)
-            start = min(max(start_sec, 0), r["meta"]["duration_s"])
+            start = min(max(start_sec, 0), r["steps"][-1]["t_sec"])  # the last tick, not duration_s: a seek there gets one tick
             yield sse("meta", {**r["meta"], "speed": speed, "start_sec": start})
             prev = None
             for s in r["steps"]:

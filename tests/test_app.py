@@ -78,6 +78,10 @@ def test_replay_ends_with_summary(client):
     assert got[-1] == ("end", {"summary": {"events": 2, "warned": 2, "median_lead_min": 6.29, "alarms": 2,
                                            "false_alarms": 0}})
     assert got[1][0] == "tick" and got[1][1]["t_sec"] == 9300
+    # a seek past the last tick (duration 9544 s, last tick 9540 s) still gets that tick and its 15 min of vitals
+    got = stream(client, "/api/replay/287?speed=600&start_sec=99999999999999999999999")
+    ticks = [d for e, d in got if e == "tick"]
+    assert got[0][1]["start_sec"] == 9540 and [t["t_sec"] for t in ticks] == [9540] and len(ticks[0]["vitals"]) == 90
 
 
 def test_static_layout(client, monkeypatch):

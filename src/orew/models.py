@@ -58,6 +58,11 @@ def logit(p):
     return np.log(p / (1 - p))
 
 
+def stack_inputs(p_snap, p_b2, cur_phase, phase):
+    """Stacker inputs in GROUPS order: logit(snapshot p), logit(baseline2 p), current value, phase one-hots (orew.live too)."""
+    return pd.DataFrame(np.column_stack([logit(p_snap), logit(p_b2), cur_phase]), columns=GROUPS[:3] + phase)
+
+
 def calibrate(x, y):
     """Isotonic, capped at its value at the top 0.1 % of scores: a few-row pure-positive top block read 1.0 on val and
     was only 55-68 % positive out of sample."""
@@ -99,8 +104,8 @@ def run(df, folds, feats, drugs, splits=("val",)):
 
             # stacker inputs: OOF base predictions on train (leakage #9), full-train base models on val/test
             for m, snap in (("fusion", "snapshot"), ("fusion_nodrug", "snapshot_nodrug")):
-                X = {s: pd.DataFrame(np.column_stack([logit(P[s][snap]), logit(P[s]["baseline2"]), el[s][[CUR[e], *phase]]]),
-                                     columns=GROUPS[:3] + phase).assign(subjectid=el[s].subjectid.to_numpy(), **{y: el[s][y].to_numpy()})
+                X = {s: stack_inputs(P[s][snap], P[s]["baseline2"], el[s][[CUR[e], *phase]], phase)
+                     .assign(subjectid=el[s].subjectid.to_numpy(), **{y: el[s][y].to_numpy()})
                      for s in out}
                 cols = GROUPS[:3] + phase
                 raw = {}

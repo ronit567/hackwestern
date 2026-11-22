@@ -144,6 +144,19 @@ def top_drivers(booster, X):
     return order, np.take_along_axis(phi, order, 1) > 0
 
 
+def pick_drivers(names, order, pos, vals, k=K):
+    """One row: (features, texts) of the first k risk-raising features by SHAP; one quoting an implausible value is
+    skipped. order / pos: that row of top_drivers; vals: the row's feature values in names order (orew.live too)."""
+    drv, txt = [], []
+    for c in order[pos]:
+        if (t := describe(names[c], vals[c])) is not None:
+            drv.append(str(names[c]))
+            txt.append(t)
+            if len(drv) == k:
+                break
+    return drv, txt
+
+
 def _p(x):
     return None if x is None or not np.isfinite(x) else float(f"{x:.4g}")
 
@@ -169,13 +182,7 @@ def records(split, processed=PROCESSED):
         names, vals = np.array(b.feature_names), X.to_numpy()
         drv, txt = [None] * len(preds), [None] * len(preds)
         for j, i in enumerate(np.flatnonzero(ok)):
-            drv[i], txt[i] = [], []
-            for c in order[j][pos[j]]:  # risk-raising features by SHAP; one quoting an implausible value is skipped
-                if (t := describe(names[c], vals[j, c])) is not None:
-                    drv[i].append(str(names[c]))
-                    txt[i].append(t)
-                    if len(drv[i]) == K:
-                        break
+            drv[i], txt[i] = pick_drivers(names, order[j], pos[j], vals[j])
         out[e] = drv, txt
     secs = time.perf_counter() - t0
 

@@ -4,9 +4,12 @@ version = "0.1.0"
 description = "Operating Room Early Warning System on VitalDB"
 requires-python = ">=3.11,<3.12"
 dependencies = [
+    "fastapi>=0.165.0",
+    "httpx>=0.28.1",
     "matplotlib>=3.11.2",
     "numpy>=2.4.6",
     "pandas>=3.1.1",
+    "psycopg[binary]>=3.3.9",
     "pyarrow>=26.0.1",
     "pytest>=9.2.0",
     "pyyaml>=6.0.4",
@@ -14,6 +17,7 @@ dependencies = [
     "scipy>=1.17.1",
     "shap>=0.51.0",
     "torch>=2.15.0",
+    "uvicorn>=0.54.0",
     "vitaldb>=1.7.2",
     "xgboost>=3.2.0",
 ]

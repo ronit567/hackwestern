@@ -45,6 +45,7 @@ const dur = (min) => { const m = Math.round(min); return m < 60 ? `${m} min` : `
 const lin = (d0, d1, r0, r1) => (v) => r0 + ((v - d0) / (d1 - d0)) * (r1 - r0);
 const median = (a) => { if (!a.length) return null; const b = [...a].sort((p, r) => p - r), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
 const drops = (n) => `${n} ${n === 1 ? "drop" : "drops"}`;
+const measure = document.createElement("canvas").getContext("2d"); // label widths for the chart's bracket rows
 // [[t, v | null]] -> path; a null lifts the pen
 function pathD(pts, x, y) {
   let d = "", pen = false;
@@ -193,11 +194,12 @@ function setSpeed(v) {
   paint();
 }
 const total = () => R?.meta?.duration_s ?? (R ? info(R.id)?.duration_min * 60 : null);
-// presenter shortcut: 10 min before the next drop after the clock, on the 30 s grid (case file; the model never sees it)
+// presenter shortcut: 10 min before the next drop after the clock, on the 30 s grid (case file; the model never sees it).
+// Chosen by onset, so a drop under 10 min away rewinds to its lead-up instead of being skipped.
 function nextDrop() {
   const now = R?.clock ?? R?.from ?? 0;
-  return (R?.file?.events || []).filter((e) => e.type === "hypotension")
-    .map((e) => Math.floor((e.onset_min * 60 - AHEAD_S) / TICK_S) * TICK_S).filter((t) => t > now).sort((a, b) => a - b)[0] ?? null;
+  const on = (R?.file?.events || []).filter((e) => e.type === "hypotension" && e.onset_min * 60 > now).map((e) => e.onset_min * 60);
+  return on.length ? Math.max(0, Math.floor((Math.min(...on) - AHEAD_S) / TICK_S) * TICK_S) : null;
 }
 // a drop is shaded from its onset to its end (case file), or until MAP is back at 65 when the surgery has no case file
 function dropEnd(o) {
@@ -327,15 +329,17 @@ function chart() {
   }
   for (const a of R.alarms) g.push(s("line", { class: "alarm-line", x1: x(a.t_sec), x2: x(a.t_sec), y1: y0, y2: y1 }),
     s("circle", { class: "alarm-dot", cx: x(a.t_sec), cy: yr(a.p10), r: 6 }));
-  // alarm -> onset brackets ("warned N min earlier") and the empty 10 min before a missed drop, in up to 3 rows
-  const rows = [];
+  // alarm -> onset brackets ("warned N min earlier") and the empty 10 min before a missed drop: each label takes the first
+  // row it fits in, a new row while the plot has room (top half), else the row that ends first
+  const rows = [], maxRows = Math.max(1, Math.floor((y1 - y0 - 30) / 2 / 26) + 1);
+  measure.font = `700 13px ${getComputedStyle(box).fontFamily}`;
   for (const o of R.onsets.filter((o) => o.warnable)) {
     const warned = o.warned && o.alarm_t_sec != null;
     const bx1 = x(Math.max(warned ? o.alarm_t_sec : o.t_sec - AHEAD_S, x0)), bx2 = x(o.t_sec);
     const text = warned ? `warned ${fmt(o.lead_min, 1)} min earlier` : "missed";
-    const w = text.length * 7 + 10, cx = Math.min(Math.max((bx1 + bx2) / 2, ML + w / 2), W - MR - w / 2);
+    const w = measure.measureText(text).width + 10, cx = Math.min(Math.max((bx1 + bx2) / 2, ML + w / 2), W - MR - w / 2);
     let row = rows.findIndex((r) => cx - w / 2 > r + 6);
-    if (row < 0) row = Math.min(rows.length, 2);
+    if (row < 0) row = rows.length < maxRows ? rows.length : rows.indexOf(Math.min(...rows));
     rows[row] = cx + w / 2;
     const by = y0 + 30 + row * 26;
     g.push(s("path", { class: warned ? "bracket" : "missed", d: `M${bx1.toFixed(1)},${by + 7}V${by}H${bx2.toFixed(1)}V${by + 7}` }),

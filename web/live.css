@@ -115,7 +115,7 @@ tbody tr.alarm { background: #f9dcda; box-shadow: inset 3px 0 0 var(--red); }
 .b-sep { opacity: .55; margin: 0 10px; }
 .b-why { font-size: 13px; opacity: .95; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip { background: #ffffff2e; border-radius: 999px; padding: 1px 9px; }
-.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; font-size: 13px; color: var(--muted); }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: 3px 11px; margin: 0; padding: 0; font-size: 12px; color: var(--muted); }
 .legend li { display: flex; align-items: center; gap: 5px; }
 .sw { display: inline-block; width: 16px; height: 4px; border-radius: 2px; }
 .sw.fus { background: var(--teal); height: 5px; }
@@ -124,7 +124,7 @@ tbody tr.alarm { background: #f9dcda; box-shadow: inset 3px 0 0 var(--red); }
 .sw.thr { background: repeating-linear-gradient(90deg, var(--amber) 0 4px, transparent 4px 7px); height: 2px; }
 .sw.drop { background: #d2403a33; height: 12px; width: 12px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); display: inline-block; }
-.chart { flex: 1 1 auto; min-height: 150px; padding: 0 8px; }
+.chart { flex: 1 1 0; min-height: 120px; padding: 0 8px; overflow: hidden; }
 
 svg { display: block; overflow: visible; }
 .chart text { fill: var(--muted); font: 12px var(--font); }
@@ -209,6 +209,23 @@ svg { display: block; overflow: visible; }
   thead th { font-size: 11px; letter-spacing: .02em; padding: 7px 6px; }
   tbody td { font-size: 13px; padding-left: 6px; padding-right: 6px; }
   .skip .tag { display: none; }
+}
+
+/* laptop browser windows (1440 x 900 screen minus the toolbar): compact rows so nothing is clipped */
+@media (max-height: 820px) and (min-width: 901px) {
+  body { gap: 6px; }
+  .top { padding-top: 6px; } .brand, .links { padding-bottom: 6px; }
+  .tile { padding: 4px 8px 2px; } .tile.key, .tile.alert { padding: 3px 7px 1px; }
+  .t-num { font-size: 22px; } .tile.key .t-num { font-size: 25px; }
+  .spark { height: 15px; }
+  .banner { height: 94px; padding: 8px 18px; gap: 2px; }
+  .b-title { font-size: 17px; } .b-line { font-size: 15px; } .b-why { font-size: 12px; }
+  .card-h { padding: 6px 16px 4px; }
+  tbody td { padding: 4px 6px; }
+  .brow { font-size: 12px; } .bt { height: 11px; }
+  .s-num { font-size: 20px; }
+  .caption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 5px 16px; }
+  .bar { padding: 6px 16px; } .round { width: 36px; height: 36px; } .round.play { width: 42px; height: 42px; }
 }
 
 /* phone: stack, let the page scroll */

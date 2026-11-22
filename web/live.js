@@ -165,8 +165,7 @@ function putRow(m, k, a) {
   if (old) old.replaceWith(tr);
   else $("rows").append(tr);
   R.rows.set(m, { tr, alarm: a });
-  const w = $("tbl-wrap");
-  w.scrollTop = w.scrollHeight;
+  R.scroll = true; // keep the newest row in view, after the layout of this frame (draw)
 }
 
 // ---- controls
@@ -219,6 +218,7 @@ function trend() { // fusion p10 now vs 5 min ago
 
 // ---- draw
 function draw() {
+  if (R?.scroll) { R.scroll = false; requestAnimationFrame(() => { const w = $("tbl-wrap"); w.scrollTop = w.scrollHeight; }); }
   tabState();
   vitals();
   banner();
@@ -288,8 +288,8 @@ function banner() {
 }
 
 function chart() {
-  const box = $("chart"), W = Math.max(260, box.clientWidth), H = Math.max(180, box.clientHeight);
-  const ML = 38, MR = 14, T = 8, AXH = 22, GAP = 12, SH = Math.round(Math.min(80, Math.max(44, H * 0.2)));
+  const box = $("chart"), W = Math.max(260, box.clientWidth), H = Math.max(120, box.clientHeight);
+  const ML = 38, MR = 14, T = 8, AXH = 22, GAP = 10, SH = Math.round(Math.min(80, Math.max(34, H * 0.2)));
   const y0 = T, y1 = H - AXH - SH - GAP, sy0 = y1 + GAP, sy1 = sy0 + SH;
   const g = [];
   const now = R?.clock, x0 = R?.vit[0]?.t_sec ?? R?.from ?? 0, x1 = Math.max(x0 + 1800, (now ?? x0) + 120);
@@ -366,6 +366,7 @@ function scores() {
       : `${R?.from ? `Since ${hm(R.from)}. ` : ""}False alarm: no drop within 10 min of it.`));
   const x = R && info(R.id);
   $("caption").textContent = x?.reason || (x ? `Surgery ${x.caseid}: ${dur(x.duration_min)}, ${drops(x.n_events)}, one of the ${surgeries.length} unseen test surgeries.` : "");
+  $("caption").title = $("caption").textContent; // the full text when a short window cuts it to one line
 }
 
 function bar() {

@@ -18,17 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from orew import REPORTS, ROOT
 from orew.evaluate import STEP as TICK
 from orew.live import VSTEP, LiveModel
+from orew.tiger import GridSource, dotenv
+from orew.tiger import insights as tiger_insights
 
 HISTORY_S = 900  # a stream opened at start_sec > 0 first sends the 15 min of vitals before it
 
 
-def load_env(path=ROOT / ".env"):
-    """KEY=VALUE lines of the gitignored .env into os.environ; the real environment wins. Values are never printed."""
-    if path.exists():
-        for line in path.read_text().splitlines():
-            k, sep, v = line.strip().partition("=")
-            if sep and not k.startswith("#"):
-                os.environ.setdefault(k.strip(), v.strip().strip("\"'"))
+def load_env():
+    """The gitignored .env into os.environ (orew.tiger parses it); the real environment wins. Values are never printed."""
+    for k, v in dotenv().items():
+        os.environ.setdefault(k, v)
 
 
 def sse(event, data):
@@ -58,7 +57,8 @@ def create_app(model=None, warm=False):
 
     @app.get("/api/health")
     def health():
-        return {"ok": True, "models": True, "data_source": model.data_source}
+        # a Tiger GridSource reports "local" once it has fallen back to the local files
+        return {"ok": True, "models": True, "data_source": getattr(model.grid, "name", model.data_source)}
 
     @app.get("/api/surgeries")
     def surgeries():
@@ -68,11 +68,7 @@ def create_app(model=None, warm=False):
     def insights():
         if not os.environ.get("TIGER_DATABASE_URL"):
             return {"available": False, "reason": "TIGER_DATABASE_URL not set"}
-        try:
-            from orew.tiger import insights as tiger_insights  # the Tiger Cloud integration's showcase queries
-        except ImportError:
-            return {"available": False, "reason": "Tiger queries not built yet (orew.tiger)"}
-        return tiger_insights()
+        return tiger_insights()  # the Tiger Cloud showcase queries, cached once they have run
 
     @app.get("/api/replay/{caseid}")
     async def replay_stream(caseid: str, request: Request, speed: float = 60.0, start_sec: int = 0):
@@ -121,7 +117,9 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     a = ap.parse_args()
     load_env()
-    uvicorn.run(create_app(warm=True), host=a.host, port=a.port)
+    src = GridSource()  # Tiger Cloud when TIGER_DATABASE_URL is set and loaded, else the local parquet files
+    print(f"grid source: {src.name}", flush=True)
+    uvicorn.run(create_app(LiveModel(grid=src, data_source=src.name), warm=True), host=a.host, port=a.port)
 
 
 if __name__ == "__main__":

@@ -75,6 +75,9 @@ def test_vitals_and_meta(replays):
     assert [v["t_sec"] for v in r["vitals"]] == list(range(0, len(r["vitals"]) * 10, 10))
     assert set(r["vitals"][0]) == {"t_sec", "map", "hr", "spo2", "sbp", "dbp", "bt", "rr", "etco2"}
     assert all(any(v[k] is not None for v in r["vitals"]) for k in ("sbp", "dbp", "bt", "rr", "etco2"))
+    # the MAP tile reads the cleaned MAP the table and banner show (map_now), not the raw zero line before the catheter
+    assert all(r["vitals"][s["t_sec"] // 10]["map"] == s["map_now"] for s in r["steps"])
+    assert min(v["map"] for v in r["vitals"] if v["map"] is not None) >= 20
     json.dumps(r, allow_nan=False)
 
 

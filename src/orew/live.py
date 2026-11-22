@@ -17,9 +17,9 @@ from orew.features import case_features, clinical
 from orew.models import CUR, SLOPE, lead_specialist, stack_inputs
 
 E = "hypotension"  # hypoxemia is exploratory (8 warnable test events): the demo replays hypotension only
-# map/spo2: what the monitor showed (the event labels use these too); the rest are the cleaned causal grid columns
-VITALS = {"map": "map_raw", "hr": "hr", "spo2": "spo2_raw", "sbp": "sbp", "dbp": "dbp", "bt": "bt", "rr": "rr",
-          "etco2": "etco2"}
+# the cleaned causal grid columns the model reads (artifact -> null), so the MAP tile shows what the table, banner and
+# map_now show; raw map_raw read 1, 9, -12 mmHg on 287's zero line before the catheter, drawn as "below 65"
+VITALS = {k: k for k in ("map", "hr", "spo2", "sbp", "dbp", "bt", "rr", "etco2")}
 VSTEP = 10  # s, vitals resolution (the results page's case files use 10 s too)
 
 

@@ -121,27 +121,69 @@ const median = (a) => { const b = [...a].sort((p, q) => p - q); return b.length 
 
 // ---- case explorer
 const PANELS = [
-  { key: "map", label: "Arterial MAP (line) and cuff MAP (circles), mmHg", unit: "mmHg", clamp: [20, 200], thr: 65, h: 150, event: "hypotension" },
-  { key: "spo2", label: "SpO2, %", unit: "%", clamp: [50, 100], thr: 90, h: 100, event: "hypoxemia" },
-  { key: "hr", label: "Heart rate, bpm", unit: "bpm", clamp: [20, 220], h: 90 },
-  { key: "etco2", label: "End-tidal CO2, mmHg", unit: "mmHg", clamp: [0, 100], h: 80 },
-  { key: "bis", label: "BIS", unit: "", clamp: [0, 100], h: 80 },
+  { key: "map", label: "Arterial MAP (line) and cuff MAP (circles), mmHg", short: "MAP, mmHg (circles: cuff)", unit: "mmHg", clamp: [20, 200], thr: 65, h: 170, event: "hypotension" },
+  { key: "spo2", label: "SpO2, %", unit: "%", clamp: [50, 100], thr: 90, h: 90, event: "hypoxemia" },
+  { key: "hr", label: "Heart rate, bpm", unit: "bpm", clamp: [20, 220], h: 80 },
+  { key: "etco2", label: "End-tidal CO2, mmHg", unit: "mmHg", clamp: [0, 100], h: 70 },
+  { key: "bis", label: "BIS", unit: "", clamp: [0, 100], h: 70 },
   { key: "ppf_rate", label: "Propofol infusion, mL/h", unit: "mL/h", clamp: [0, 1000], h: 60, cls: "drug", zero: true },
   { key: "rftn_ug_h", label: "Remifentanil infusion, µg/h", unit: "µg/h", clamp: [0, 50000], h: 60, cls: "drug", zero: true },
 ];
+// what each event is on the monitor, for the explorer's sentences
+const EV = {
+  hypotension: { sig: "MAP", unit: "mmHg", thr: 65, dur: "60 s", one: "drop", many: "drops" },
+  hypoxemia: { sig: "SpO2", unit: "%", thr: 90, dur: "2 min", one: "desaturation", many: "desaturations" },
+};
+const EXPLORATORY = "exploratory (few events)";
+const SPLIT = { train: "training", val: "validation", test: "test, unseen" };
 const PHASES = [["Induction", "anestart", "opstart"], ["Surgery", "opstart", "opend"], ["Emergence", "opend", "aneend"]];
-const RISK_H = 80;
-let caseId, caseData, picker;
+const RISK_H = { hypotension: 90, hypoxemia: 60 }, LANE_H = 48;
+let caseId, caseData, picker, zoom = null, featured = [];
+
+// minutes from case start -> h:mm (h:mm:ss with sec)
+function hm(t, sec) {
+  const a = Math.round(Math.abs(t) * (sec ? 60 : 1)), m = sec ? Math.floor(a / 60) : a;
+  return `${t < 0 ? "−" : ""}${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}${sec ? `:${String(a % 60).padStart(2, "0")}` : ""}`;
+}
+const dur = (min) => { const m = Math.round(min); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
+const mins = (v) => `${fmt(v, 1)} min`;
+const plural = (n, E) => (n === 1 ? E.one : E.many);
+const tag = (t) => h("span", { class: "tag" }, t);
+// #case=<id> opens a surgery; the picker writes it back, so a link opens the same one
+const hashCase = () => +(/^#case=(\d+)$/.exec(location.hash)?.[1] || 0) || null;
 
 function caseShell() {
+  const op = (c) => c.opname?.trim() || "operation not recorded";
   picker = h("select", { id: "case-pick" }, index.map((c) =>
-    h("option", { value: c.caseid }, `${c.caseid}: ${c.opname || "operation not recorded"}, ${c.department || "department not recorded"}, ${fmt(c.duration_min)} min`)));
-  picker.onchange = () => { caseId = +picker.value; drawCase(); };
-  caseId = index[0].caseid;
+    h("option", { value: c.caseid }, `${c.caseid} · ${SPLIT[c.split] || "split unknown"} · ${op(c)} · ${dur(c.duration_min)}`)));
+  picker.onchange = () => openCase(+picker.value);
+  const nTest = index.filter((c) => c.split === "test").length;
+  const feat = featured.map((f) => ({ ...f, c: index.find((c) => c.caseid === f.caseid) })).filter((f) => f.c);
+  caseId = index.some((c) => c.caseid === hashCase()) ? hashCase() : index[0].caseid;
+  picker.value = caseId;
   fill("cases",
-    h("p", {}, `${index.length} surgeries exported. Each is shown whole, from case start; values are the raw monitor numbers before artifact cleaning, in 10 s steps.`),
+    h("p", {}, `${index.length} surgeries exported${nTest ? `, ${nTest === index.length ? "all" : nTest} from the test split, which the model never saw` : ""}. Each is shown whole, time in hours:minutes from case start; the signals are the raw monitor numbers before artifact cleaning, in 10 s steps.`),
+    feat.length ? h("div", { class: "featured" },
+      h("h3", {}, "Unseen test surgeries"),
+      h("p", { class: "note" }, "Picked to show the model at its best and at its worst. Every other exported surgery is in the list below."),
+      h("ul", {}, feat.map((f) => h("li", {}, h("a", { href: `#case=${f.caseid}`, "data-case": f.caseid },
+        h("strong", {}, `${op(f.c)}`), h("span", { class: "feat-id" }, ` · surgery ${f.caseid}`), h("span", { class: "feat-why" }, f.reason)))))) : null,
     h("div", { class: "pick" }, h("label", { for: "case-pick" }, "Surgery"), picker),
     h("div", { id: "case-view" }));
+}
+
+function openCase(id, scroll) {
+  if (!index.some((c) => c.caseid === id)) return;
+  caseId = id; zoom = null; picker.value = id;
+  if (location.hash !== `#case=${id}`) history.replaceState(null, "", `#case=${id}`);
+  drawCase();
+  if (scroll) document.getElementById("cases").scrollIntoView();
+}
+addEventListener("hashchange", () => { if (picker && hashCase()) openCase(hashCase(), true); });
+
+function setZoom(z) {
+  zoom = z;
+  drawCase().then(() => document.getElementById(z ? "unzoom" : "case-chart")?.focus());
 }
 
 async function drawCase() {
@@ -152,6 +194,7 @@ async function drawCase() {
     caseData = c;
   }
   const c = caseData;
+  for (const a of document.querySelectorAll(".featured a")) a.toggleAttribute("aria-current", +a.dataset.case === id);
   if (!c) return view.replaceChildren(empty(`Surgery ${id} is listed but its file is missing.`, RUN.export));
   const d = c.demographics;
   const who = [
@@ -161,52 +204,133 @@ async function drawCase() {
   const notes = [];
   if (!c.events) notes.push(empty("Events are not labelled yet.", "uv run python -m orew.labels && " + RUN.export));
   if (!c.risk) notes.push(h("p", { class: "empty" }, "No risk curves yet. They appear once the model is trained and explain.py's records are exported."));
-  else if (c.split === "train") notes.push(h("p", { class: "note" }, "This is a training surgery: its risk curves come from cross-fitted models that never saw this patient."));
-  else if (c.split === "val") notes.push(h("p", { class: "note" }, "This is a validation surgery: the calibration and the alert threshold were fit on this split."));
+  else notes.push(h("p", { class: "note" }, {
+    test: "Test surgery: this patient was never used to train or calibrate the model or to set its alert threshold.",
+    val: "Validation surgery: the calibration and the alert threshold were fit on this split.",
+    train: "Training surgery: its risk curves come from cross-fitted models that never saw this patient. Alarm reasons were computed for validation and test surgeries only.",
+  }[c.split] || ""));
   const readout = h("p", { class: "readout", "aria-live": "polite" }, "Point at the chart, or focus it and use the arrow keys, to read values.");
-  view.replaceChildren(
-    h("p", { class: "who" }, `${who}. ${d.department || ""}${d.opname ? `: ${d.opname}` : ""}${d.optype ? ` (${d.optype})` : ""}.`,
-      c.split ? ` In the ${{ train: "training", val: "validation", test: "test" }[c.split] || c.split} split.` : null),
-    ...notes, readout, caseChart(c, view.clientWidth, readout), alertList(c) || "");
+  view.replaceChildren(...[
+    h("p", { class: "who" }, h("strong", {}, `Surgery ${c.caseid}`), ` · ${who}. ${d.department || ""}${d.opname ? `: ${d.opname.trim()}` : ""}${d.optype ? ` (${d.optype})` : ""}. ${dur(c.duration_min)}.`,
+      c.split ? ` ${cap(SPLIT[c.split] || c.split)} split.` : null),
+    verdicts(c), ...notes,
+    zoom ? h("p", { class: "zoombar" }, `Zoomed in to ${hm(zoom[0])}–${hm(zoom[1])}. `,
+      h("button", { type: "button", id: "unzoom" }, "Show the whole surgery")) : null,
+    readout, caseChart(c, view.clientWidth, readout), eventList(c), alertList(c)].flat(9).filter((n) => n != null));
+  document.getElementById("unzoom")?.addEventListener("click", () => setZoom(null));
+}
+
+// the one-line answer per event: how many were warned, how early, and at what cost in false alarms
+function verdicts(c) {
+  if (!c.detection) return null;
+  return h("div", { class: "verdicts" }, EVENTS.filter((ev) => c.detection[ev]).map((ev) => {
+    const d = c.detection[ev], E = EV[ev], minor = ev === "hypoxemia";
+    if (minor && !d.events && !d.alarms) return null;
+    return h("p", { class: minor ? "verdict-line minor" : "verdict-line" }, h("strong", {}, cap(ev)), minor ? [" ", tag(EXPLORATORY)] : null, ": ",
+      d.events ? [h("strong", {}, `${d.warned} of ${d.events} ${plural(d.events, E)} warned`), d.warned ? `, median ${mins(d.median_lead_min)} ahead` : ""] : `no ${E.many} in this surgery`,
+      ` · ${d.false_alarms} false ${d.false_alarms === 1 ? "alarm" : "alarms"} of ${d.alarms} in ${fmt(d.hours, 1)} h monitored.`,
+      d.not_warnable ? ` ${d.not_warnable} more ${plural(d.not_warnable, E)} started before the first prediction (first 10 min), not counted.` : null);
+  }));
+}
+
+// text labels placed left to right without overlap: the first candidate centre (given the label width) that fits wins
+function placer(lo, hi) {
+  let free = -Infinity;
+  return (text, centres, attrs) => {
+    const w = text.length * 7.4 + 6;
+    for (const c of centres(w)) {
+      const l = Math.max(lo, Math.min(c - w / 2, hi - w));
+      if (l >= free + 6) { free = l + w; return s("text", { ...attrs, x: l + w / 2, "text-anchor": "middle" }, text); }
+    }
+    return null;
+  };
 }
 
 function caseChart(c, W, readout) {
-  const ML = 40, MR = 12, TOP = 30, GAP = 26;
+  const ML = 56, MR = 14, TOP = 46, GAP = 32, narrow = W < 600; // narrow: titles start at the left edge, shorter
   // anestart can precede casestart and aneend follow caseend, so the axis spans every marker
   const marks = Object.values(c.phases_min).filter((v) => v != null);
-  const T = c.t_min, tMax = Math.max(c.duration_min || 0, T[T.length - 1] || 1, ...marks), t0 = Math.min(0, ...marks);
+  const T = c.t_min, end = Math.max(c.duration_min || 0, T[T.length - 1] || 1, ...marks), start = Math.min(0, ...marks);
+  const [t0, tMax] = zoom ? [Math.max(start, zoom[0]), Math.min(end, zoom[1])] : [start, end];
   const x = lin(t0, tMax, ML, W - MR);
   const panels = PANELS.filter((p) => finite(c.series[p.key]).length);
   const risks = Object.entries(c.risk || {});
+  const sig = (k) => { const p = panels.find((p) => p.key === k); return p && { ...p, vals: c.series[k] }; };
+  const risk = (ev) => c.risk?.[ev] && { key: `risk-${ev}`, label: `${cap(ev)} risk in the next 10 min, %`, sub: ev === "hypoxemia" ? (narrow ? "exploratory" : EXPLORATORY) : null,
+    unit: "%", clamp: [0, 1], h: RISK_H[ev], cls: "risk", zero: true, risk: c.risk[ev], ev };
+  const lane = (ev) => (c.detection?.[ev]?.events || c.detection?.[ev]?.alarms) && { key: `lane-${ev}`, lane: ev, h: LANE_H,
+    label: narrow ? `${cap(ev)}: alarms vs actual start` : `${cap(ev)}: model alarms and when each ${EV[ev].one} actually started`,
+    sub: ev === "hypoxemia" ? (narrow ? "exploratory" : EXPLORATORY) : null };
+  // hypotension first: its alarms, MAP and risk sit together at the top
   let yTop = TOP;
-  const rows = [...panels.map((p) => ({ ...p, vals: c.series[p.key] })),
-    ...risks.map(([ev, r]) => ({ key: `risk-${ev}`, label: `${cap(ev)} risk in the next 10 min, %`, unit: "%", clamp: [0, 1], h: RISK_H, cls: "risk", zero: true, risk: r, ev }))]
-    .map((p) => { const r = { ...p, y0: yTop + 18 }; yTop = r.y0 + p.h + GAP; return r; });
-  const H = yTop + 6;
-  const tStep = [10, 30, 60, 120].find((st) => x(st) - x(0) >= 44) || 120;
-  const g = [];
+  const rows = [lane("hypotension"), sig("map"), risk("hypotension"), lane("hypoxemia"), sig("spo2"), risk("hypoxemia"),
+    ...["hr", "etco2", "bis", "ppf_rate", "rftn_ug_h"].map(sig)].filter(Boolean)
+    .map((p) => { const r = { ...p, y0: yTop + 20 }; yTop = r.y0 + p.h + GAP; return r; });
+  const H = yTop + 4;
+  const tStep = [1, 2, 5, 10, 15, 30, 60, 120].find((st) => x(st) - x(0) >= 52) || 120;
+  const minor = { 1: 0.5, 2: 1, 5: 1, 10: 5, 15: 5, 30: 5, 60: 5, 120: 10 }[tStep];
+  const g = [], plot = []; // plot: everything placed in time, clipped to the plot area when zoomed in
+  const onGrid = (t, st) => Math.abs(t / st - Math.round(t / st)) < 1e-6;
 
-  // anesthesia-record grid: faint 5 min columns, stronger every tStep, across every panel
+  // anesthesia-record grid: faint minor columns, stronger every tStep, across every panel
   for (const r of rows)
-    for (let t = Math.ceil(t0 / 5) * 5; t <= tMax; t += 5)
-      g.push(s("line", { class: t % tStep ? "grid" : "grid-major", x1: x(t), x2: x(t), y1: r.y0, y2: r.y0 + r.h }));
-  for (let t = 0; t <= tMax; t += tStep) g.push(s("text", { x: x(t), y: H - 6, "text-anchor": "middle" }, t ? `${t}` : "0 min"));
+    for (let t = Math.ceil(t0 / minor) * minor; t <= tMax + 1e-9; t += minor)
+      plot.push(s("line", { class: onGrid(t, tStep) ? "grid-major" : "grid", x1: x(t), x2: x(t), y1: r.y0, y2: r.y0 + r.h }));
+  for (const y of [TOP - 6, H - 6]) {
+    g.push(s("text", { x: 0, y, class: "axis-unit" }, "h:mm"));
+    for (let t = Math.ceil(t0 / tStep) * tStep; t <= tMax + 1e-9; t += tStep) g.push(s("text", { x: x(t), y, "text-anchor": "middle" }, hm(t)));
+  }
 
   // phase strip + marker lines
   const ph = c.phases_min;
   for (const [name, a, b] of PHASES) {
     if (ph[a] == null || ph[b] == null) continue;
-    const w = x(ph[b]) - x(ph[a]);
-    g.push(s("rect", { class: `phase-${a}`, x: x(ph[a]), y: 4, width: Math.max(w, 1), height: 16, rx: 2 },
-      s("title", {}, `${name}: ${fmt(ph[a], 1)}–${fmt(ph[b], 1)} min`)));
-    if (w > name.length * 7 + 8) g.push(s("text", { class: "phase-label", x: x(ph[a]) + w / 2, y: 16, "text-anchor": "middle" }, name));
+    const l = Math.max(x(ph[a]), ML), w = Math.min(x(ph[b]), W - MR) - l;
+    if (w <= 0) continue;
+    plot.push(s("rect", { class: `phase-${a}`, x: l, y: 4, width: Math.max(w, 1), height: 18, rx: 2 },
+      s("title", {}, `${name}: ${hm(ph[a])}–${hm(ph[b])}`)));
+    if (w > name.length * 8 + 8) plot.push(s("text", { class: "phase-label", x: l + w / 2, y: 17, "text-anchor": "middle" }, name));
   }
   // marker lines per panel, so they don't cross the panel titles
   for (const r of rows) for (const k of ["anestart", "opstart", "opend", "aneend"])
-    if (ph[k] != null) g.push(s("line", { class: "phase", x1: x(ph[k]), x2: x(ph[k]), y1: r.y0, y2: r.y0 + r.h }));
+    if (ph[k] != null) plot.push(s("line", { class: "phase", x1: x(ph[k]), x2: x(ph[k]), y1: r.y0, y2: r.y0 + r.h }));
 
+  const alertsOf = (ev) => (c.alerts || []).filter((a) => a.type === ev);
+  const evOf = (ev) => (c.events || []).filter((e) => e.type === ev);
+  const alarmAt = (e) => e.alarm_min != null && (c.alerts || []).find((a) => a.type === e.type && a.t_min === e.alarm_min);
   const summary = [];
   for (const r of rows) {
+    g.push(s("text", { class: "title", x: narrow ? 0 : ML, y: r.y0 - 7 }, (narrow && r.short) || r.label, r.sub ? s("tspan", { class: "row-sub" }, `  ${r.sub}`) : null));
+    const clip = `clip-${r.key}`, inner = [];
+    g.push(s("clipPath", { id: clip }, s("rect", { x: ML, y: r.y0 - 2, width: W - MR - ML, height: r.h + 4 })));
+    if (r.lane) { // alarms on top, a bracket from the warning alarm to the onset, the onset as a line
+      const E = EV[r.lane], yb = r.y0 + 32, labels = [], place = placer(ML, W - MR);
+      // a label whose bracket centre is outside a zoomed window would sit at the edge, next to the wrong marks
+      const label = (cx, text, cls) => cx >= ML && cx <= W - MR && labels.push(place(text, () => [cx], { class: cls, y: yb - 7 }));
+      let bEnd = -Infinity; // a bracket starting inside the previous one (one alarm warned both) drops to a second row
+      inner.push(s("line", { class: "grid-major", x1: ML, x2: W - MR, y1: r.y0 + r.h, y2: r.y0 + r.h }));
+      for (const e of evOf(r.lane)) {
+        const xo = x(e.onset_min), a = alarmAt(e);
+        inner.push(s("line", { class: `onset onset-${e.type}`, x1: xo, x2: xo, y1: r.y0 + 14, y2: r.y0 + r.h },
+          s("title", {}, `${cap(E.one)} started at ${hm(e.onset_min, true)}`)));
+        if (a) {
+          const xa = x(a.t_min), row2 = xa < bEnd - 1, y = row2 ? yb + 10 : yb;
+          bEnd = Math.max(bEnd, xo);
+          inner.push(s("path", { class: "bracket", d: `M${xa},${y - 4}v8M${xa},${y}H${xo - 1}m-5,-3.5l5,3.5l-5,3.5` },
+            s("title", {}, `Warned ${mins(e.lead_min)} before the ${E.one}`)));
+          if (!row2) label((xa + xo) / 2, zoom ? `warned ${fmt(e.lead_min, 1)} min earlier` : `${fmt(e.lead_min, 1)} min`, "lead-label");
+        } else if (e.warnable) {
+          inner.push(s("path", { class: "missed", d: `M${xo - 5},${yb - 5}l10,10m0,-10l-10,10` }, s("title", {}, `Missed: no alarm in the 10 min before`)));
+          label(xo, "missed", "missed-label");
+        }
+      }
+      for (const a of alertsOf(r.lane))
+        inner.push(s("path", { class: a.true === false ? "alert false" : "alert", d: `M${x(a.t_min)},${r.y0 + 13}l-6,-11h12z` },
+          s("title", {}, `Alarm at ${hm(a.t_min, true)}: ${a.true === false ? `false alarm, no ${E.one} within 10 min` : `a ${E.one} followed within 10 min`}`)));
+      inner.push(labels);
+      g.push(s("g", { "clip-path": `url(#${clip})` }, inner));
+      continue;
+    }
     const vals = r.risk ? r.risk.p10 : r.vals, ts = r.risk ? r.risk.t_min : T;
     const seen = finite(vals).filter((v) => v >= r.clamp[0] && v <= r.clamp[1]);
     let lo = r.zero ? 0 : Math.min(...seen, r.thr ?? Infinity), hi = Math.max(...seen, r.thr ?? -Infinity, r.zero ? 1 : -Infinity);
@@ -218,39 +342,48 @@ function caseChart(c, W, readout) {
     const n = r.h > 90 ? 4 : r.h >= 80 ? 3 : 2, st = niceStep(lo, hi || 1, n);
     [lo, hi] = [Math.floor(lo / st) * st, Math.ceil(hi / st) * st || 1];
     const tk = ticks(lo, hi, n, st), y = lin(lo, hi, r.y0 + r.h, r.y0);
-    g.push(s("text", { class: "title", x: ML, y: r.y0 - 6 }, r.label, clipped ? s("tspan", { class: "row-sub" }, "  (brief peaks run off the top)") : null));
+    if (clipped && !narrow) g.push(s("text", { class: "row-sub", x: W - MR, y: r.y0 - 7, "text-anchor": "end" }, "brief peaks run off the top"));
     for (const v of tk) {
       g.push(s("line", { class: "grid", x1: ML, x2: W - MR, y1: y(v), y2: y(v) }));
       g.push(s("text", { x: ML - 6, y: y(v) + 4, "text-anchor": "end" }, r.risk ? prob(v) : `${v}`));
     }
-    const clip = `clip-${r.key}`;
-    g.push(s("clipPath", { id: clip }, s("rect", { x: ML, y: r.y0, width: W - MR - ML, height: r.h })));
-    const inner = [];
-    for (const e of (c.events || []).filter((e) => e.type === (r.event || r.ev)))
+    for (const e of evOf(r.event || r.ev))
       inner.push(s("rect", { class: `ev ev-${e.type}`, x: x(e.onset_min), y: r.y0, width: Math.max(x(e.end_min) - x(e.onset_min), 2), height: r.h },
-        s("title", {}, `${cap(e.type)} ${fmt(e.onset_min, 1)}–${fmt(e.end_min, 1)} min`)));
+        s("title", {}, `${cap(e.type)} ${hm(e.onset_min, true)}–${hm(e.end_min, true)}`)));
     const thr = r.thr ?? r.risk?.threshold;
     if (thr != null) inner.push(s("line", { class: "thr", x1: ML, x2: W - MR, y1: y(thr), y2: y(thr) }));
     inner.push(s("path", { class: `line s-${r.cls || r.key}`, d: pathD(ts, vals, x, y) }));
     if (r.key === "map") // a cuff reading is held for up to 30 s on the grid, so draw only where the value changes
       c.series.nibp_map.forEach((v, i, a) => v != null && v !== a[i - 1] && inner.push(s("circle", { class: "nibp", cx: x(T[i]), cy: y(v), r: 3 })));
-    for (const a of (c.alerts || []).filter((a) => r.risk && a.type === r.ev))
-      inner.push(s("path", { class: "alert", d: `M${x(a.t_min)},${r.y0 + 9}l-5,-9h10z` }, s("title", {}, `Alert at ${fmt(a.t_min, 1)} min`)));
-    if (thr != null) inner.push(s("text", { class: "thr-label", x: W - MR - 4, y: y(thr) - 4, "text-anchor": "end" }, r.risk ? `alert at ${prob(thr, "\u00a0%")}` : `${thr} ${r.unit}`));
+    // the value the warning alarm saw: what the current number looked like while the model already warned
+    const place = placer(ML, W - MR), done = new Set(); // one alarm can warn two events: one dot
+    if (r.event) for (const e of evOf(r.event)) {
+      const a = alarmAt(e);
+      if (!a || a.now == null || done.has(a)) continue;
+      done.add(a);
+      const xa = x(a.t_min), ya = y(Math.max(lo, Math.min(hi, a.now)));
+      inner.push(s("line", { class: "alarm-line", x1: xa, x2: xa, y1: r.y0, y2: ya }),
+        s("circle", { class: "alarm-dot", cx: xa, cy: ya, r: 4.5 }, s("title", {}, `${EV[r.event].sig} ${fmt(a.now)} ${r.unit} when the model warned`)));
+      if (zoom && a.t_min >= t0 && a.t_min <= tMax) inner.push(place(`${EV[r.event].sig} ${fmt(a.now)} at the alarm`, (w) => [xa - 8 - w / 2, xa + 8 + w / 2], { class: "thr-label", y: ya - 9 }));
+    }
+    for (const a of (r.risk ? alertsOf(r.ev) : []))
+      inner.push(s("path", { class: a.true === false ? "alert false" : "alert", d: `M${x(a.t_min)},${r.y0 + 10}l-5,-9h10z` }, s("title", {}, `Alarm at ${hm(a.t_min, true)}`)));
+    if (thr != null) inner.push(s("text", { class: "thr-label", x: W - MR - 4, y: y(thr) - 5, "text-anchor": "end" }, r.risk ? `alarm at ${prob(thr, " %")}` : `${thr} ${r.unit}`));
     g.push(s("g", { "clip-path": `url(#${clip})` }, inner));
     const f = r.risk ? prob : fmt;
     summary.push(`${r.label}: ${seen.length ? `median ${f(median(seen))}, range ${f(Math.min(...seen))} to ${f(Math.max(...seen))}` : "no data"}.`);
   }
+  g.unshift(s("clipPath", { id: "clip-plot" }, s("rect", { x: ML, y: 0, width: W - MR - ML, height: H })), s("g", { "clip-path": "url(#clip-plot)" }, plot));
 
   // crosshair readout, by pointer or arrow keys
-  const cursor = s("line", { class: "cursor", y1: 20, y2: H - 20, visibility: "hidden" });
-  const svg = s("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, tabindex: 0, role: "img",
-    "aria-label": `Vital signs over ${fmt(tMax)} minutes of surgery ${c.caseid}. ${summary.join(" ")} Use the left and right arrow keys to read values.` },
+  const cursor = s("line", { class: "cursor", y1: 22, y2: H - 20, visibility: "hidden" });
+  const svg = s("svg", { id: "case-chart", width: W, height: H, viewBox: `0 0 ${W} ${H}`, tabindex: 0, role: "img",
+    "aria-label": `Vital signs ${zoom ? `from ${hm(t0)} to ${hm(tMax)}` : `over ${dur(tMax - t0)}`} of surgery ${c.caseid}. ${summary.join(" ")} The list below the chart gives each event and the model's first alarm before it. Use the left and right arrow keys to read values.` },
   g, cursor);
   let at = -1;
   const show = (i) => {
     at = Math.max(0, Math.min(T.length - 1, i));
-    const t = T[at], parts = [`${fmt(t, 1)} min`];
+    const t = T[at], parts = [hm(t, true)];
     for (const p of panels) {
       const v = c.series[p.key][at];
       parts.push(`${SIGNALS[p.key] || p.label} ${v == null ? "no value" : `${fmt(v)} ${p.unit}`.trim()}`);
@@ -258,7 +391,7 @@ function caseChart(c, W, readout) {
     }
     for (const [ev, r] of risks) {
       let j = r.t_min.findLastIndex((u) => u <= t);
-      if (j >= 0 && r.p10[j] != null) parts.push(`${ev} 10 min risk ${prob(r.p10[j], "\u00a0%")}`);
+      if (j >= 0 && r.p10[j] != null) parts.push(`${ev} 10 min risk ${prob(r.p10[j], " %")}`);
     }
     readout.textContent = parts.join(", ");
     cursor.setAttribute("x1", x(t)); cursor.setAttribute("x2", x(t)); cursor.setAttribute("visibility", "visible");
@@ -270,21 +403,58 @@ function caseChart(c, W, readout) {
     svg.addEventListener(type, (e) => show(nearest(toT(e.clientX - svg.getBoundingClientRect().left))));
   svg.addEventListener("keydown", (e) => {
     const step = { ArrowRight: 6, ArrowLeft: -6, PageDown: 60, PageUp: -60 }[e.key]; // 6 bins = 1 min
-    if (step) { e.preventDefault(); show((at < 0 ? 0 : at) + (e.shiftKey ? step * 10 : step)); }
-    if (e.key === "Home" || e.key === "End") { e.preventDefault(); show(e.key === "Home" ? 0 : T.length - 1); }
+    if (step) { e.preventDefault(); show((at < 0 ? nearest(t0) : at) + (e.shiftKey ? step * 10 : step)); }
+    if (e.key === "Home" || e.key === "End") { e.preventDefault(); show(nearest(e.key === "Home" ? t0 : tMax)); }
   });
-  const ev = c.events || [], missing = PANELS.filter((p) => !panels.includes(p)).map((p) => SIGNALS[p.key]);
+  const missing = PANELS.filter((p) => !panels.includes(p)).map((p) => SIGNALS[p.key]);
   return h("div", { class: "chart" }, svg, h("ul", { class: "vh" }, summary.map((t) => h("li", {}, t))),
-    missing.length ? h("p", { class: "note" }, `Not recorded in this surgery: ${missing.join(", ")}.`) : null,
-    c.events ? h("p", { class: "note" }, ev.length ? `Shaded: labelled events (${ev.map((e) => `${e.type} ${fmt(e.onset_min, 1)}–${fmt(e.end_min, 1)} min`).join("; ")}).` : "No labelled events in this surgery.",
-      risks.length ? " In the risk panels the dashed line is the alert threshold and triangles mark alerts." : null) : null);
+    c.detection ? h("p", { class: "legend chart-key" },
+      h("span", { class: "k-alarm", "aria-hidden": "true" }, "▼"), " model alarm, an event followed within 10 min · ",
+      h("span", { class: "k-false", "aria-hidden": "true" }, "▽"), " false alarm · ",
+      h("span", { class: "k-onset", "aria-hidden": "true" }, "│"), " the event actually starts · ",
+      h("span", { class: "k-bracket", "aria-hidden": "true" }, "├─▶"), " warning time · ",
+      h("span", { class: "k-dot", "aria-hidden": "true" }, "●"), " MAP or SpO2 when the model warned. Shaded: the event; dashed lines: thresholds.") : null,
+    missing.length ? h("p", { class: "note" }, `Not recorded in this surgery: ${missing.join(", ")}.`) : null);
 }
+
+// each event in words, with a zoom button: the chart's labels get crowded over a whole surgery
+function eventList(c) {
+  if (!c.events?.length) return c.events ? h("p", { class: "note" }, "No labelled events in this surgery.") : null;
+  return EVENTS.map((ev) => {
+    const evs = c.events.filter((e) => e.type === ev), E = EV[ev];
+    if (!evs.length) return null;
+    return h("div", { class: "events" },
+      h("h3", {}, `${cap(ev)}: when each ${E.one} started, and the model's first alarm before it`, ev === "hypoxemia" ? [" ", tag(EXPLORATORY)] : null),
+      h("p", { class: "note" }, `A ${E.one} is ${E.sig} under ${E.thr} ${E.unit} for ${E.dur}. It counts as warned if an alarm fired in the 10 minutes before it started.`),
+      h("ol", {}, evs.map((e, i) => {
+        const a = e.alarm_min != null && c.alerts?.find((x) => x.type === ev && x.t_min === e.alarm_min);
+        const what = a ? [h("strong", {}, `Warned ${mins(e.lead_min)} earlier`), ` (alarm at ${hm(a.t_min, true)}).`,
+          a.now != null ? ` ${E.sig} at the alarm: ${fmt(a.now)} ${E.unit}, ${a.now > E.thr ? `still above ${E.thr}: the number looked normal.` : a.now === E.thr ? `right at ${E.thr}, not under it yet.` : `already under ${E.thr}, but not yet for ${E.dur}.`}` : null]
+          : e.warnable === false ? [h("strong", {}, "Not scored"), ": it started before the model's first prediction (first 10 min)."]
+          : e.warnable ? [h("strong", { class: "miss" }, "Missed"), ": no alarm in the 10 minutes before it."]
+          : "No risk curves for this surgery.";
+        const zoomTo = [e.onset_min - 15, e.onset_min + 10];
+        return h("li", {}, h("span", { class: "when" }, `${cap(E.one)} ${i + 1} at ${hm(e.onset_min, true)}`),
+          h("span", { class: "what" }, what, ` It lasted ${mins(e.end_min - e.onset_min)}.`),
+          h("button", { type: "button", class: "zoom", "data-zoom": zoomTo.join(","), "aria-label": `Zoom the chart to ${E.one} ${i + 1}` }, "Zoom in"));
+      })));
+  });
+}
+addEventListener("click", (e) => { const b = e.target.closest?.("button[data-zoom]"); if (b) setZoom(b.dataset.zoom.split(",").map(Number)); });
 
 function alertList(c) {
   if (!c.alerts?.length) return null;
-  return h("div", {}, h("h3", {}, "Alerts in this surgery"), h("ul", { class: "alerts" }, c.alerts.map((a) =>
-    h("li", {}, h("strong", {}, `${fmt(a.t_min, 1)} min, ${a.type}`), `: 10 min risk ${prob(a.p10, "\u00a0%")}, led by the ${a.lead_specialist} model. `,
-      `Drivers: ${(a.top_drivers || []).join("; ")}.`))));
+  return EVENTS.map((ev) => {
+    const al = c.alerts.filter((a) => a.type === ev), E = EV[ev];
+    if (!al.length) return null;
+    return h("details", { class: "alarms" },
+      h("summary", {}, `All ${al.length} ${ev} alarms, with the model's reasons`, ev === "hypoxemia" ? ` — ${EXPLORATORY}` : ""),
+      h("ol", {}, al.map((a) => h("li", {}, h("strong", {}, hm(a.t_min, true)), ` · risk ${prob(a.p10, " %")}`,
+        a.true == null ? null : a.true ? ` · true alarm: a ${E.one} followed within 10 min` : h("span", { class: "miss" }, ` · false alarm: no ${E.one} within 10 min`),
+        a.now != null ? ` · ${E.sig} ${fmt(a.now)} ${E.unit}` : null, ".",
+        a.lead_specialist ? ` Led by the ${a.lead_specialist} model.` : null,
+        a.top_drivers?.length ? ` Reasons: ${a.top_drivers.join("; ")}.` : null))));
+  });
 }
 
 // ---- results from metrics.json
@@ -504,14 +674,59 @@ function subgroups(W) {
   fill("subgroups", out.length > 2 ? out : empty("Subgroup results not computed.", RUN.evaluate));
 }
 
+// ---- the answer first: the final numbers in plain words, every one read from metrics.json
+function summarySection() {
+  const fm = metrics.final_model, H = HH(), all = flagged("overall")?.hypotension?.[H] || {}, bins = flagged("bins")?.hypotension?.[H] || [];
+  const o = all[fm], b = all.baseline1;
+  if (!o || !b) return fill("summary", empty("No hypotension results yet.", RUN.evaluate));
+  const n = metrics.n?.hypotension || {}, nHyp = ill ? realN?.events : metrics.n?.hypoxemia?.events;
+  const f1 = (v) => fmt(v, 1), f2 = (v) => fmt(v, 2), p0 = (v) => fmt(v * 100);
+  const ci = (m, f) => (m ? `${f(m[1])}–${f(m[2])}` : "n/a");
+  const tile = (label, k, f, unit, sub) => h("div", { class: "tile" },
+    h("p", { class: "tile-label" }, label),
+    h("p", { class: "tile-num" }, `${f(o[k]?.[0])}${unit}`),
+    h("p", { class: "tile-vs" }, "Current MAP alone: ", h("strong", {}, `${f(b[k]?.[0])}${unit}`)),
+    h("p", { class: "tile-ci" }, `95 % CI ${ci(o[k], f)} vs ${ci(b[k], f)}`),
+    sub ? h("p", { class: "tile-sub" }, sub) : null);
+  const more = o.event_recall?.[0] > b.event_recall?.[0], moreIsEarlier = (o.median_lead_min?.[0] > b.median_lead_min?.[0]) === more;
+  const band = (bn) => {
+    const a = bn.models[fm]?.auroc, z = bn.models.baseline1?.auroc;
+    if (!a || !z) return null;
+    const clear = a[1] > z[2]; // the two 95 % intervals do not overlap
+    return h("div", { class: clear ? "band" : "band unclear" },
+      h("p", { class: "band-label" }, binLabel("hypotension", bn.label), " mmHg"),
+      h("p", { class: "band-num" }, f2(a[0]), h("span", { class: "vs" }, ` vs ${f2(z[0])}`)),
+      h("p", { class: "tile-ci" }, `95 % CI ${ci(a, f2)} vs ${ci(z, f2)}`),
+      h("p", { class: "band-verdict" }, clear ? "Clear win: the intervals do not overlap."
+        : a[0] > z[0] ? "Higher, but the intervals overlap: not a clear win." : "Not better in this band."));
+  };
+  fill("summary",
+    h("p", { class: "hero" }, metrics.split === "test" ? `Evaluated once on ${fmt(n.cases)} surgeries the model never saw.` : `Evaluated on ${fmt(n.cases)} validation surgeries (not the final test).`),
+    h("p", { class: "lead" }, `${fmt(n.subjects)} patients, ${fmt(n.events)} hypotension events, ${fmt(n.times)} prediction times. Hypotension ${H} minutes ahead: our model against an alarm on the current MAP alone (baseline 1), each alarm threshold set on validation surgeries for at most ${fmt(metrics.alerts?.alarms_per_hour_target)} alarms per hour.`,
+      exclFlagged ? " Times within 5 minutes after an event are left out (setting further down)." : null),
+    h("div", { class: "tiles" },
+      tile(`Ranks risk ${H} min ahead (AUROC, 0.5 = chance)`, "auroc", f2, ""),
+      tile("Median warning before a drop", "median_lead_min", f1, " min", "Over the drops each one warned."),
+      tile("False alarms per true alarm", "false_per_true_alarm", f2, "", `Lower is better. At ${f1(o.alarms_per_hour?.[0])} vs ${f1(b.alarms_per_hour?.[0])} alarms per hour.`),
+      tile(`Drops with an alarm in the ${H} min before`, "event_recall", p0, " %",
+        `${more ? "Our model" : "The current-MAP alarm"} catches more drops${moreIsEarlier ? " and warns earlier" : ", but warns later"}.`)),
+    h("h3", {}, "While MAP still looks normal"),
+    h("p", {}, `AUROC inside each band of the current MAP. Inside a narrow band the number alone says little, so this is where an earlier warning has to come from.`),
+    h("div", { class: "bands" }, bins.map(band)),
+    h("p", { class: "note" }, `Hypoxemia: only ${nHyp == null ? "a few" : fmt(nHyp)} events in these surgeries, so it is exploratory and no claim is made.`,
+      ill ? h("span", { class: "ill-tag" }, " The hypoxemia charts further down show made-up illustrative numbers.") : null),
+    h("p", { class: "claim" }, "What this shows: more time to act before the pressure falls, from signals already on the monitor. Retrospective and from one hospital (VitalDB); it does not show that patients do better."));
+}
+
 let cohort, metrics, index;
 
 function renderAll() {
   overview(cohort);
-  for (const id of ["headline", "metrics", "calibration", "alerts", "subgroups"])
+  for (const id of ["summary", "headline", "metrics", "calibration", "alerts", "subgroups"])
     if (!metrics) fill(id, empty("Not computed yet.", RUN.evaluate));
   if (metrics) {
     const W = document.querySelector("#headline .body").clientWidth;
+    summarySection();
     headline(W);
     metricsSection();
     calibration(W);
@@ -533,8 +748,9 @@ function useIllustrative() {
 async function main() {
   const wantIll = q.get("illustrative") === "1";
   let illFile;
-  [cohort, metrics, index, illFile] = await Promise.all([get("cohort.json"), get("metrics.json"), get("cases/index.json"),
-    wantIll ? get("illustrative_hypoxemia.json", "") : null]);
+  [cohort, metrics, index, illFile, featured] = await Promise.all([get("cohort.json"), get("metrics.json"), get("cases/index.json"),
+    wantIll ? get("illustrative_hypoxemia.json", "") : null, get("featured.json", "")]);
+  featured ||= [];
   const status = document.getElementById("status");
   if (location.protocol === "file:")
     status.replaceChildren("Open this page through the local server so it can read the results: ",
@@ -554,6 +770,7 @@ async function main() {
         h("a", { href: location.pathname }, "Show only real results"), ".")));
   } else if (wantIll) status.append(" ", empty("Illustrative hypoxemia numbers were asked for but not found.", RUN.illustrative));
   renderAll();
+  if (hashCase()) document.getElementById("cases").scrollIntoView(); // a #case= link lands on the surgery
   let raf;
   addEventListener("resize", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(renderAll); });
 }

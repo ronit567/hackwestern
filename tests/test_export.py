@@ -172,6 +172,7 @@ def test_featured_reasons_hold():
         c = load(p)
         d, now = c["detection"]["hypotension"], {a["t_min"]: a["now"] for a in c["alerts"] if a["type"] == "hypotension"}
         assert c["split"] == "test" and kind[f["kind"]](d) and (d["false_alarms"] > 0) == f["false_alarms"], f
+        assert f["false_alarms"] or "no false hypotension alarms" in f["reason"], f  # hypoxemia alarms may be false
         drops = [e for e in c["events"] if e["type"] == "hypotension"]
         warned = [e for e in drops if e.get("alarm_min") is not None]
         # "MAP still read above 65" only when the alarm is not a recovery within 5 min of an earlier drop (as the page words it)

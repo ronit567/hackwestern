@@ -19,7 +19,8 @@ except ImportError:  # features.py not built yet
 def test_every_feature_has_a_template(v):
     for f in FEATURES:
         assert explain._template(f)[1] is not None, f"{f} falls back to the generic text"
-        assert isinstance(describe(f, v), str) and describe(f, v)
+        d = describe(f, v)
+        assert d is None or isinstance(d, str) and d  # None: an implausible level, skipped as a driver
 
 
 def test_template_text():
@@ -30,6 +31,14 @@ def test_template_text():
     assert describe("phase", 3) == "emergence phase"
     assert describe("not_a_feature_x", 2) == "not a feature x 2"
     assert describe("bt", np.float32("nan")) == "temperature: no recent data"
+
+
+def test_implausible_levels_are_not_quoted():
+    assert describe("dbp_min_10m", -30) is None and describe("hr", 0) is None and describe("bt", 5.6) is None
+    assert describe("map_mean_5m", 250) is None and describe("sbp", -81) is None
+    assert describe("dbp_min_10m", 40) == "diastolic BP dipped to 40 mmHg over last 10 min"
+    assert describe("hr", 80) == "heart rate 80 bpm"
+    assert describe("map_slope_5m", -30).startswith("MAP falling 30")  # slopes are not range-checked
 
 
 def _fake(tmp_path, n=200):
@@ -59,6 +68,7 @@ def test_records(tmp_path):
     recs, _ = explain.records("val", tmp_path)
     json.dumps(recs)  # serialisable
     assert len(recs) == len(preds)
+    skipped = 0
     for e in EVENTS:
         b = xgb.Booster()
         b.load_model(tmp_path / "models" / f"snapshot_{e}_{HEAD}.json")
@@ -77,10 +87,11 @@ def test_records(tmp_path):
             d = blk["top_drivers"]
             assert len(d) <= 3 and len(blk["top_drivers_text"]) == len(d)
             assert all(isinstance(s, str) for s in d + blk["top_drivers_text"])
-            s = phi.loc[i, d].to_numpy()
-            assert (s > 0).all() and (np.diff(s) <= 0).all()  # positive, ordered by SHAP
-            rest = phi.loc[i].drop(d)
-            assert len(d) == 3 or (rest <= 0).all()  # fewer than 3 only when no other feature pushes risk up
-            if d:
-                assert s[0] == phi.loc[i].max()
-                assert blk["top_drivers_text"][0] == describe(d[0], feat.at[i, d[0]])
+            # the first 3 risk-raising features by SHAP whose text quotes a plausible value
+            row = phi.loc[i]
+            want = [f for f in row.index[np.argsort(-row.to_numpy(), kind="stable")]
+                    if row[f] > 0 and describe(f, feat.at[i, f]) is not None][:3]
+            assert d == want
+            assert blk["top_drivers_text"] == [describe(f, feat.at[i, f]) for f in d]
+            skipped += sum(row[f] > 0 and describe(f, feat.at[i, f]) is None for f in row.index)
+    assert skipped  # N(0, 1) features put MAP below 30 mmHg, so implausible drivers were met and skipped

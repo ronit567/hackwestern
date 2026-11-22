@@ -2,7 +2,7 @@
 
 `python -m orew.explain --split val|test` writes data/processed/records_{split}.jsonl, one record per
 pred_table row of that split, with the fusion probabilities, lead_specialist and the top 3 features
-whose SHAP value pushes the 10-min risk up.
+whose SHAP value pushes the 10-min risk up (skipping any that would quote an implausible value).
 """
 import argparse
 import json
@@ -36,6 +36,13 @@ SIGNALS = {  # feature prefix -> (plain label, unit)
     "beat_ppv": ("pulse-pressure swing", ""), "beat_sbp_sd": ("beat-to-beat SBP variability", "mmHg"),
     "pleth_amp": ("pleth amplitude", ""), "pleth_cv": ("pleth instability (CV)", ""),
     "shock_index": ("shock index", ""), "baseline_map": ("baseline MAP", "mmHg"),
+}
+# a quoted level outside these is an artifact (flush, zeroed line, loose probe; e.g. diastolic -30 mmHg, HR 0), so that
+# driver is skipped and the next one used. MAP below 30 or a core temperature below 30 °C is not a monitor reading to cite.
+PLAUSIBLE = {
+    "map": (30, 200), "sbp": (40, 260), "dbp": (15, 160), "nibp_map": (30, 200), "baseline_map": (40, 180),
+    "hr": (25, 220), "beat_hr": (25, 220), "spo2": (50, 100), "bt": (30, 43), "beat_pp": (10, 150),
+    "beat_sys_area": (0, 50),
 }
 PHASES = {"pre": "pre-induction", "induction": "induction", "maintenance": "maintenance",
           "emergence": "emergence", "post": "post-anaesthesia"}  # keys = orew.features.PHASES, in order
@@ -71,6 +78,14 @@ def stat(word):
     return lambda m, v: f"{sig(m)[0]} {word} {num(v)}{u(sig(m)[1])} over last {m['w']} min"
 
 
+def level(f):
+    """f for a quoted level (current, mean or min), or None where that level is implausible for the signal."""
+    def g(m, v):
+        lo, hi = PLAUSIBLE.get(m["sig"], (-math.inf, math.inf))
+        return f(m, v) if lo <= v <= hi else None
+    return g
+
+
 def value(lab, unit=""):
     return lambda m, v: f"{lab} {num(v)}{u(unit)}"
 
@@ -83,9 +98,9 @@ def yes_no(yes, no):
 TEMPLATES = {
     rf"(?P<sig>{SIG})_slope_(?P<w>\d+)m": slope,
     rf"(?P<sig>{SIG})_delta_(?P<w>\d+)m": delta,
-    rf"(?P<sig>{SIG})_mean_(?P<w>\d+)m": stat("averaging"),
-    rf"(?P<sig>{SIG})_min_(?P<w>\d+)m": stat("dipped to"),
-    rf"(?P<sig>{SIG})": lambda m, v: f"{sig(m)[0]} {num(v)}{u(sig(m)[1])}",
+    rf"(?P<sig>{SIG})_mean_(?P<w>\d+)m": level(stat("averaging")),
+    rf"(?P<sig>{SIG})_min_(?P<w>\d+)m": level(stat("dipped to")),
+    rf"(?P<sig>{SIG})": level(lambda m, v: f"{sig(m)[0]} {num(v)}{u(sig(m)[1])}"),
     rf"(?P<sig>{SIG})_missing_frac": lambda m, v: f"{sig(m)[0]} missing {v:.0%} of last 10 min",
     rf"art_(?P<sig>{SIG})_frac": lambda m, v: f"{sig(m)[0]} artifact {v:.0%} of last 10 min",
     r"pleth_amp_rel": lambda m, v: f"pleth amplitude {num(v)}x its 10-min mean",
@@ -113,7 +128,7 @@ def _template(name):
 
 
 def describe(name, v):
-    """Plain-language string for feature `name` at its current value `v`."""
+    """Plain-language string for feature `name` at its current value `v`; None if the value it quotes is implausible."""
     v = math.nan if v is None else float(v)  # float() first: numpy float32 NaN is not a Python float
     m, f = _template(name)
     if math.isnan(v):
@@ -122,10 +137,10 @@ def describe(name, v):
     return f(m, v) if f else f"{name.replace('_', ' ')} {num(v)}"
 
 
-def top_drivers(booster, X, k=K):
-    """Per row: indices of the k features with the largest SHAP, and whether each is > 0 (pushes risk up)."""
+def top_drivers(booster, X):
+    """Per row: feature indices by descending SHAP, and whether each is > 0 (pushes risk up)."""
     phi = booster.predict(xgb.DMatrix(X), pred_contribs=True)[:, :-1]  # exact TreeSHAP; last column = bias
-    order = np.argsort(-phi, axis=1, kind="stable")[:, :k]
+    order = np.argsort(-phi, axis=1, kind="stable")
     return order, np.take_along_axis(phi, order, 1) > 0
 
 
@@ -154,9 +169,13 @@ def records(split, processed=PROCESSED):
         names, vals = np.array(b.feature_names), X.to_numpy()
         drv, txt = [None] * len(preds), [None] * len(preds)
         for j, i in enumerate(np.flatnonzero(ok)):
-            idx = order[j][pos[j]]
-            drv[i] = names[idx].tolist()
-            txt[i] = [describe(n, vals[j, c]) for n, c in zip(drv[i], idx)]
+            drv[i], txt[i] = [], []
+            for c in order[j][pos[j]]:  # risk-raising features by SHAP; one quoting an implausible value is skipped
+                if (t := describe(names[c], vals[j, c])) is not None:
+                    drv[i].append(str(names[c]))
+                    txt[i].append(t)
+                    if len(drv[i]) == K:
+                        break
         out[e] = drv, txt
     secs = time.perf_counter() - t0
 

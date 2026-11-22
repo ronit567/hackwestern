@@ -16,6 +16,16 @@ uv run python -m http.server -d ~/Desktop/hackathon 8000        # then open http
 - `?illustrative=1` replaces the hypoxemia blocks with **made-up** numbers (`web/illustrative_hypoxemia.json`) to show the layout with more events. Every such block, chart and table is labelled "ILLUSTRATIVE — NOT A REAL RESULT". Hypotension and the surgeries stay real.
 - `?theme=light` or `?theme=dark` overrides the system colour scheme (projectors).
 
+## Live demo
+
+```sh
+uv run python -m orew.app --port 8000      # then open http://localhost:8000/
+```
+
+- One server (FastAPI) for the whole demo: it serves the results page as before (`/web/`) and replays an unseen **test** surgery with the saved models running live. Every 30 s of surgery time, it computes the features from the monitor data up to that moment only, then the risk of hypotension in the next 5, 10 and 15 minutes, and fires the same alarm rule the evaluation used. You can watch the risk rise and the alarm fire minutes before MAP actually falls under 65, or see a drop the model missed (`1046`).
+- The replayed numbers are not new results. For the surgeries tested, they equal the locked test predictions exactly (`tests/test_live.py`).
+- API and event stream: [PLAN.md, "Live demo"](PLAN.md#live-demo).
+
 ## Final test results
 
 Run once, locked (`reports/test.lock`): 140 surgeries from 139 patients never used for training, calibration or alert thresholds; 443 hypotension events; 53,269 prediction times. Hypotension, 10 minutes ahead. 95 % CIs from 1,000 patient-bootstrap resamples. Full tables: `reports/test_report.md` (written by `orew.evaluate`, not in git).
@@ -79,7 +89,7 @@ uv run python -m orew.export                  # page data
 
 ```
 config.yaml          every number: cohort, artifact rules, windows, alert rate, bins, bootstrap
-src/orew/            download, clean, labels, features, models, evaluate, explain, export, illustrative
+src/orew/            download, clean, labels, features, models, evaluate, explain, export, illustrative; live + app (demo server)
 tests/               leakage checklist (SPEC) and unit tests
 web/                 static results page (index.html, app.js, style.css, featured.json); no build, no CDN
 data/, reports/      local outputs, not in git

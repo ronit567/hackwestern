@@ -3,7 +3,7 @@
 ## Context
 Build the model specified in *Operating Room Early Warning System: Project Brief* (PDF): every 30 s during surgery, predict whether **hypotension** (invasive MAP < 65 for ≥ 60 s) or **hypoxemia** (SpO2 < 90 for ≥ 2 min) starts in the next 5 / 10 / 15 min, on VitalDB. The design reuses the RescueWindow pattern of specialists plus a fusion layer. The claim to prove is: *it warns earlier and more accurately than watching the current number, including within bins where the number still looks normal.* The spec sections (Prediction task → Evaluation, Leakage checklist) are binding. The brief's own build plan is replaced by the plan below.
 
-**User decisions:** multi-day scope (everything except MOVER, which needs a data use agreement); **~1,000 cases**; **no replay demo**.
+**User decisions:** multi-day scope (everything except MOVER, which needs a data use agreement); **~1,000 cases**; **no replay demo** (reversed later: judging is a live demo, see "Live demo").
 
 **Facts checked live against the VitalDB API (2026-11-21):**
 - Adult general-anesthesia cases with ≥ 30 min of recording: 5,988.
@@ -263,3 +263,41 @@ The page already draws all four: shaded events, risk panels with the threshold, 
 - `bins`: MAP `65-70, 70-75, 75-80, >80` (hypotension) and SpO2 `90-94, >=95` (hypoxemia), from `config.yaml` `eval.*_bins` (`lo` inclusive, `hi` exclusive), binned on the current value at t.
 - `subgroups` attrs: `age_band` (`eval.age_bands`), `sex`, `asa`, `department`, `emergency`.
 - `split: "test"` is written only by the single locked test run. The page shows the split in the headline.
+
+## Live demo
+Judging is a live demo with no slides, so a FastAPI server tells the story on one page and replays an unseen **test** surgery with the saved models running live. The locked test evaluation is untouched: no retraining, no re-evaluation, and the live inference reproduces `preds_test.parquet` exactly (`tests/test_live.py`).
+
+```
+uv run python -m orew.app --port 8000        # http://localhost:8000/ redirects to /web/demo.html
+```
+
+- Serves `web/` at `/web` and `reports/web/` at `/reports/web`, the layout `python -m http.server -d <repo>` gave, so the results page works unchanged. Nothing else of the repo is served. Binds 127.0.0.1 (`--host` to change).
+- At start-up the featured surgeries' replays are computed in a background thread (3–5 s each), so they open at once. Any other test surgery takes a few seconds the first time, then stays cached in memory. One surgery is computed at a time.
+- Engine `src/orew/live.py`. `LiveModel` loads once: the snapshot XGBoost models (5/10/15 min), `fusion.pkl` (baseline 2, stacker, isotonic), `threshold.json` (chosen on val), the test rows of `pred_table`, the events and `cases.csv`.
+  - `replay(caseid)` walks the 2 s grid in 30 s steps. At each scored t it computes the features from grid rows with `t_sec <= t` only (`features.case_features`).
+  - p5/p10/p15 are built exactly as `models.run` built them (`models.stack_inputs`): logit(snapshot), logit(baseline 2), current MAP and phase one-hots, then the stacker, isotonic and the running max over horizons.
+  - Alarms come from `evaluate.alarms` on the p10 history (val threshold, 300 s refractory, rearm +0.10). Each alarm carries the SHAP drivers of the 10-min snapshot model (`explain.top_drivers` + `explain.pick_drivers`, with the PLAUSIBLE filter).
+- **scored** at t is `eligible_hypotension` from `pred_table`: the evaluation's definition, also used by the case files' risk curves. A drop only becomes an event once MAP has stayed under 65 for 60 s, so during a drop that flag knows up to 60 s ahead. Like the evaluation, the replay hides risk while a drop is in progress, or when the 10-min input window is mostly missing. The probabilities use data `<= t` only.
+- Data-source seam: `LiveModel(grid=local_grid, data_source="local")`. `local_grid(caseid)` reads `data/processed/grid/{caseid:04d}.parquet`. A Tiger Cloud source passes its own function that returns the same frame, with `data_source="tiger"`.
+- Hypotension only. Hypoxemia is exploratory (8 warnable test events), so the replay makes no hypoxemia claim.
+- `TIGER_DATABASE_URL` comes from the environment or a gitignored `.env` (read by `orew.app` at start). It is never printed, logged or sent to the page.
+
+| Route | Returns |
+|---|---|
+| `GET /api/health` | `{"ok": true, "models": true, "data_source": "local" \| "tiger"}` |
+| `GET /api/surgeries` | `{"surgeries": [{caseid, duration_min, n_events, featured, reason}]}`: the 140 **test** surgeries only (never used for training, calibration or thresholds); featured first in `web/featured.json` order, then by caseid. `n_events` = warnable hypotension events; `reason` = the featured card's text or `null` |
+| `GET /api/replay/{caseid}?speed=60&start_sec=0` | `text/event-stream`, `Cache-Control: no-cache`. 404 unless `caseid` is all digits and in the test list. `speed` is clamped to [1, 600] (NaN → 60); `start_sec` is clamped to [0, `duration_s`] |
+| `GET /api/insights` | `{"available": false, "reason": "TIGER_DATABASE_URL not set"}` without a database; otherwise `orew.tiger.insights()`, which returns `{"available", "reason"?, "queries": [{title, plain, sql, columns, rows}]}` (the Tiger integration's module) |
+
+Replay events (JSON in `data:`). A comment line `: computing` opens the stream at once, before `meta`.
+
+| Event | Data |
+|---|---|
+| `meta` | `{caseid, duration_s, threshold, demographics, phases_min, first_pred_sec, speed, start_sec}`. `duration_s` = last grid time; `phases_min` = minutes from `casestart` (null if missing); `speed` and `start_sec` after clamping |
+| `tick` | Every 30 s of surgery time, t = 0, 30, … from `start_sec`: `{t_sec, vitals, p5, p10, p15, scored, map_now}`. `vitals` = `[{t_sec, map, hr, spo2}]` at 10 s steps in (previous tick, t]: the last finite 2 s value in (s − 10, s], with `map` = `map_raw` and `spo2` = `spo2_raw` (what the monitor showed, before artifact cleaning, as in the case files) and nulls kept. With `start_sec > 0` the first tick carries the 15 min of vitals before it. p5/p10/p15 are null when not scored. `map_now` = the cleaned MAP at t, the model's and baseline 1's input |
+| `alarm` | `{t_sec, p10, map_now, drivers: [up to 3 plain-language strings]}` |
+| `onset` | `{t_sec, event: "hypotension", warnable, warned, lead_min, alarm_t_sec}`, sent with the tick whose (t − 30, t] holds a real onset (ground truth from `events.parquet`). `alarm_t_sec` = the first alarm in [onset − 10 min, onset). An onset before the first prediction time is sent with `warnable: false` |
+| `end` | `{summary: {events, warned, median_lead_min, alarms, false_alarms}}` for the whole surgery, equal to the case file's `detection.hypotension`. A false alarm has no onset in the 10 min after it, which is only known once the surgery is over |
+
+- Pacing: the server waits 30 s / `speed` of wall time between ticks. To pause or seek, the client closes the stream and reopens it with `start_sec`. The alarm state is always computed from the start of the surgery, so a seek shows the same alarms. The stream stops when the client disconnects.
+- Tests: `tests/test_live.py` (for 287 and 1046, live p5/p10/p15 equal `preds_test.parquet` at every scored t, max difference 0; alarms, p10, MAP, drivers and the verdict equal the case files and `records_test.jsonl`; truncation: deleting every grid row after t leaves p and the alarm at t unchanged). `tests/test_app.py` (health, test-only surgeries with featured first, 404s, the SSE stream, static layout, `/data`, `/README.md` and `.env` not served).

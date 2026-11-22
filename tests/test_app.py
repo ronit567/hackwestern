@@ -60,6 +60,12 @@ def test_replay_stream(client):
     assert meta["speed"] == 600 and meta["caseid"] == 287 and meta["start_sec"] == 1500 and meta["threshold"] > 0
     assert ticks[0]["t_sec"] == 1500 and len(ticks[0]["vitals"]) == 90 and ticks[0]["vitals"][-1]["t_sec"] == 1500
     assert all(len(t["vitals"]) == 3 for t in ticks[1:])
+    assert all(v["t_sec"] <= t["t_sec"] for t in ticks for v in t["vitals"])  # the extra vitals are causal too
+    assert set(ticks[0]["vitals"][0]) == {"t_sec", "map", "hr", "spo2", "sbp", "dbp", "bt", "rr", "etco2"}
+    sc = [t for t in ticks if t["scored"]]
+    assert sc and all(t["lead"] in ("snapshot", "trend", "current_value", "phase") and t["p_snapshot_10"] is not None
+                      and t["p_baseline1_10"] is not None for t in sc)
+    assert all(t["lead"] is None and t["p_snapshot_10"] is None for t in ticks if not t["scored"])
     assert [t["t_sec"] for t in ticks] == list(range(1500, ticks[-1]["t_sec"] + 1, 30))
     alarm = next(d for e, d in got if e == "alarm")
     assert alarm["t_sec"] == 1860 and len(alarm["drivers"]) == 3
@@ -82,6 +88,6 @@ def test_static_layout(client, monkeypatch):
               "/reports/web/%2e%2e/test.lock"]:
         assert client.get(p).status_code == 404, p
     r = client.get("/", follow_redirects=False)
-    assert r.status_code in (302, 307) and r.headers["location"] == "/web/demo.html"
+    assert r.status_code in (302, 307) and r.headers["location"] == "/web/live.html"
     monkeypatch.delenv("TIGER_DATABASE_URL", raising=False)
     assert client.get("/api/insights").json() == {"available": False, "reason": "TIGER_DATABASE_URL not set"}

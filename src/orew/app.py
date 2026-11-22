@@ -54,7 +54,7 @@ def create_app(model=None, warm=False):
 
     @app.get("/")
     def root():
-        return RedirectResponse("/web/demo.html")
+        return RedirectResponse("/web/live.html")
 
     @app.get("/api/health")
     def health():
@@ -96,7 +96,8 @@ def create_app(model=None, warm=False):
                     prev = s["t_sec"] - HISTORY_S if start > 0 else -1
                 v = r["vitals"][max(prev // VSTEP + 1, 0): s["t_sec"] // VSTEP + 1]  # vitals in (prev, t]
                 yield sse("tick", {"t_sec": s["t_sec"], "vitals": v, "p5": s["p5"], "p10": s["p10"], "p15": s["p15"],
-                                   "scored": s["scored"], "map_now": s["map_now"]})
+                                   "scored": s["scored"], "map_now": s["map_now"],
+                                   **{k: s[k] for k in ("p_snapshot_10", "p_baseline1_10", "lead")}})
                 if s["alarm"]:
                     yield sse("alarm", s["alarm"])
                 for o in s["onsets"]:

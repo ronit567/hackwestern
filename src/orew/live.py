@@ -14,10 +14,12 @@ from orew.evaluate import STEP as TICK
 from orew.explain import pick_drivers, top_drivers
 from orew.export import DEMO, PHASES, val
 from orew.features import case_features, clinical
-from orew.models import CUR, SLOPE, stack_inputs
+from orew.models import CUR, SLOPE, lead_specialist, stack_inputs
 
 E = "hypotension"  # hypoxemia is exploratory (8 warnable test events): the demo replays hypotension only
-VITALS = {"map": "map_raw", "hr": "hr", "spo2": "spo2_raw"}  # what the monitor showed; the event labels use these too
+# map/spo2: what the monitor showed (the event labels use these too); the rest are the cleaned causal grid columns
+VITALS = {"map": "map_raw", "hr": "hr", "spo2": "spo2_raw", "sbp": "sbp", "dbp": "dbp", "bt": "bt", "rr": "rr",
+          "etco2": "etco2"}
 VSTEP = 10  # s, vitals resolution (the results page's case files use 10 s too)
 
 
@@ -68,8 +70,9 @@ class LiveModel:
         return sorted(out, key=lambda s: (rank.index(s["caseid"]) if s["featured"] else len(rank), s["caseid"]))
 
     def score(self, g, t, c):
-        """(p5, p10, p15, snapshot feature row, current MAP) at t from grid rows t_sec <= t only, built the way
-        orew.models built the fusion inputs; p is the running max over horizons, as in preds_*.parquet."""
+        """(p5, p10, p15, snapshot feature row, current MAP, headline-horizon parts) at t from grid rows t_sec <= t only,
+        built the way orew.models built the fusion inputs; p is the running max over horizons, as in preds_*.parquet.
+        parts: the 10-min snapshot and baseline 1 probabilities and lead_specialist, as preds_*.parquet stores them."""
         g = g.iloc[: t // STEP + 1]  # the grid is gap-free from t_sec = 0, so these are exactly the rows <= t
         f = case_features(g, [t], c)
         cur = pd.DataFrame({CUR[E]: g["map"].to_numpy()[-1:]})  # = pred_table map_now (baseline 1's input)
@@ -80,7 +83,10 @@ class LiveModel:
             b2 = m["baseline2"].predict_proba(cur.assign(**{SLOPE[E]: f[SLOPE[E]].to_numpy()}))[:, 1]
             x = stack_inputs(snap, b2, cur.assign(**{k: f[k].to_numpy() for k in self.phase}), self.phase)
             p.append(m["iso_fusion"].predict(m["fusion"].predict_proba(x)[:, 1])[0])
-        return (*np.fmax.accumulate(p), f, float(cur.iat[0, 0]))
+            if h == HH:
+                parts = {"p_snapshot_10": float(snap[0]), "p_baseline1_10": float(m["baseline1"].predict_proba(cur)[0, 1]),
+                         "lead": str(lead_specialist(m["fusion"], x)[0])}
+        return (*np.fmax.accumulate(p), f, float(cur.iat[0, 0]), parts)
 
     def drivers(self, f):
         """Plain-language SHAP drivers of the headline snapshot model, as explain.records writes them."""
@@ -102,9 +108,11 @@ class LiveModel:
             # under 65 for 60 s, so like the evaluation (and the risk curves export draws) the replay shows no risk
             # while a drop is in progress or the input window is mostly missing. Probabilities are computed live.
             s = {"t_sec": t, "scored": bool(pt[f"eligible_{E}"].get(t, False)), "p5": None, "p10": None, "p15": None,
+                 "p_snapshot_10": None, "p_baseline1_10": None, "lead": None,
                  "map_now": r(g["map"].iat[t // STEP]), "alarm": None, "onsets": []}
             if s["scored"]:
-                s["p5"], s["p10"], s["p15"], f, now = self.score(g, t, c)
+                s["p5"], s["p10"], s["p15"], f, now, parts = self.score(g, t, c)
+                s.update(parts)
                 hist_p.append(s["p10"])
                 hist_t.append(t)
                 if alarms(np.array(hist_p), np.zeros(len(hist_t)), np.array(hist_t), self.thr)[-1]:

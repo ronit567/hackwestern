@@ -63,6 +63,13 @@ def stack_inputs(p_snap, p_b2, cur_phase, phase):
     return pd.DataFrame(np.column_stack([logit(p_snap), logit(p_b2), cur_phase]), columns=GROUPS[:3] + phase)
 
 
+def lead_specialist(stk, x):
+    """Per row, the GROUPS name with the largest signed contribution coef * standardized stacker input, phase one-hots
+    summed (orew.live too)."""
+    z = stk[:-1].transform(x) * stk[-1].coef_[0]
+    return np.array(GROUPS)[np.column_stack([z[:, :3], z[:, 3:].sum(1)]).argmax(1)]
+
+
 def calibrate(x, y):
     """Isotonic, capped at its value at the top 0.1 % of scores: a few-row pure-positive top block read 1.0 on val and
     was only 55-68 % positive out of sample."""
@@ -119,10 +126,8 @@ def run(df, folds, feats, drugs, splits=("val",)):
                     P[s][m] = iso.predict(raw[s])
                 keep[m], keep[f"iso_{m}"] = stk, iso
                 if m == "fusion" and h == HEAD:
-                    for s in splits:  # largest signed contribution coef * standardized input, phase one-hots summed
-                        z = stk[:-1].transform(X[s][cols]) * stk[-1].coef_[0]
-                        g = np.column_stack([z[:, :3], z[:, 3:].sum(1)])
-                        out[s].loc[el[s].index, f"lead_specialist_{e}"] = np.array(GROUPS)[g.argmax(1)]
+                    for s in splits:
+                        out[s].loc[el[s].index, f"lead_specialist_{e}"] = lead_specialist(stk, X[s][cols])
             saved["fusion"]["models"][f"{e}_{h}"] = {k: keep[k] for k in keep if not k.startswith("snapshot")}
 
             for s in out:

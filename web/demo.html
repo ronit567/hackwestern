@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OR early warning: the story</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="demo.css">
+<script src="demo.js" defer></script>
+</head>
+<body class="demo">
+<header class="topbar">
+  <a class="brand" href="#top"><span class="mark" aria-hidden="true">+</span>OR Early Warning<span class="brand-sub">Hypotension forecasting on VitalDB</span></a>
+  <nav aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#honest">Kept honest</a>
+    <a href="#results">Results</a>
+    <a href="#tiger">Tiger Data</a>
+    <a href="#limits">Limitations</a>
+    <a href="index.html">Full results</a>
+  </nav>
+  <a class="btn primary" href="live.html">Live monitor</a>
+</header>
+<main>
+  <section id="top" class="story-hero" aria-labelledby="hero-h">
+    <p class="kicker">Operating-room early warning</p>
+    <h1 id="hero-h">Warns the anaesthetist minutes before blood pressure falls</h1>
+    <p class="lead">Every 30 seconds during surgery, the model reads the signals already on the anaesthesia monitor and estimates the chance that arterial pressure (MAP) falls under 65 mmHg for at least a minute in the next 5, 10 or 15 minutes. The goal is more time to act.</p>
+    <div id="hero-nums" class="hero-nums" aria-live="polite"></div>
+    <p class="hero-cta"><a class="btn primary big" href="live.html">Open the live monitor <span aria-hidden="true">→</span></a><a class="btn big" href="#results">See the results</a></p>
+    <p class="hero-note">The monitor replays a surgery from the test split, which the model never saw, with the saved models scoring it live.</p>
+  </section>
+
+  <section id="how" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <p class="sub">Two views of the same monitor, combined and calibrated into one probability, and an alarm with a budget.</p>
+    <div id="pipeline" class="pipeline card"></div>
+    <ol id="steps" class="steps"></ol>
+  </section>
+
+  <section id="honest" aria-labelledby="honest-h">
+    <h2 id="honest-h">How we kept it honest</h2>
+    <div id="honest-body" class="honest"></div>
+  </section>
+
+  <section id="results" aria-labelledby="results-h">
+    <h2 id="results-h">Results on the locked test split</h2>
+    <div id="results-body"></div>
+  </section>
+
+  <section id="tiger" aria-labelledby="tiger-h">
+    <h2 id="tiger-h">Powered by Tiger Data</h2>
+    <div id="tiger-body"></div>
+  </section>
+
+  <section id="limits" aria-labelledby="limits-h">
+    <h2 id="limits-h">Limitations</h2>
+    <ul class="limits card">
+      <li>Retrospective and from one hospital (VitalDB, Seoul National University Hospital). It needs external validation.</li>
+      <li>Patients with an arterial line: a fixed-seed sample of adult general-anaesthesia surgeries, sicker than average.</li>
+      <li id="lim-trade" hidden></li>
+      <li id="lim-bands" hidden></li>
+      <li>Hypoxemia (low SpO2) had too few events to test, so no claim is made about it.</li>
+      <li>Not built yet: the trajectory model (GRU and 1D CNN on the arterial wave) and the pattern model. These results are the XGBoost snapshot model plus fusion.</li>
+      <li>Vasopressor infusions are nearly absent from VitalDB and boluses have no timestamps.</li>
+      <li>Alarm reasons are SHAP drivers of the snapshot model in plain-language templates, not causes.</li>
+    </ul>
+    <p class="claim-line">It shows more time to act before the pressure falls, from signals already on the monitor. It does not show that patients do better.</p>
+    <p class="hero-cta"><a class="btn primary big" href="live.html">Open the live monitor <span aria-hidden="true">→</span></a><a class="btn big" href="index.html">Full results page</a></p>
+    <p class="note">The full results page has every table, calibration, subgroups and each surgery's whole record.</p>
+  </section>
+</main>
+<noscript><p>This page draws its numbers and charts with JavaScript.</p></noscript>
+</body>
+</html>
